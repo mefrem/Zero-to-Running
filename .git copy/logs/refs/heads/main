@@ -1,9 +1,0 @@
-0000000000000000000000000000000000000000 28ae13eabd058f54f38c40a255beb85c223c25f5 mefrem <51917427+mefrem@users.noreply.github.com> 1762652404 -0600	commit (initial): First commit: two prompts for orchestrating, and the relevant agent files loaded into project's .claude/agents/ directory
-28ae13eabd058f54f38c40a255beb85c223c25f5 28ae13eabd058f54f38c40a255beb85c223c25f5 mefrem <51917427+mefrem@users.noreply.github.com> 1762652441 -0600	Branch: renamed refs/heads/master to refs/heads/main
-28ae13eabd058f54f38c40a255beb85c223c25f5 522acc467598f8d5c8e78833fbb590d6cd84bf6d mefrem <51917427+mefrem@users.noreply.github.com> 1762652967 -0600	commit: Add comprehensive README documenting BMAD orchestration workflows
-522acc467598f8d5c8e78833fbb590d6cd84bf6d f2813a458c8af6823541ca019dc6ae5a27d01d05 mefrem <51917427+mefrem@users.noreply.github.com> 1762653213 -0600	commit: Fix README encoding - replace special characters with ASCII
-f2813a458c8af6823541ca019dc6ae5a27d01d05 f79f9872d19c496aa17a06aef096129e5d7eef14 mefrem <51917427+mefrem@users.noreply.github.com> 1762653474 -0600	commit: Streamline README - make it crisp and scannable
-f79f9872d19c496aa17a06aef096129e5d7eef14 65d86c20791c6192b7a8c888536e90883c49623c mefrem <51917427+mefrem@users.noreply.github.com> 1762659626 -0600	commit: Update README with autonomy instructions and BMAD v4 info
-65d86c20791c6192b7a8c888536e90883c49623c 0ea89b1fb98be334db365ef78506b8526cf54e27 mefrem <51917427+mefrem@users.noreply.github.com> 1762733441 -0600	commit: Updated repo
-0ea89b1fb98be334db365ef78506b8526cf54e27 c172edc9a0fcbd9a74c20e6571564b3104ea4edb mefrem <51917427+mefrem@users.noreply.github.com> 1762734945 -0600	commit: Updated prompts
-c172edc9a0fcbd9a74c20e6571564b3104ea4edb 8754df60edccaddeb6ec3d661384c07a413850cd mefrem <51917427+mefrem@users.noreply.github.com> 1762741968 -0600	commit: Changed the Claude models associated with QA and Scrum Master for context efficiency
