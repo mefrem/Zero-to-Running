@@ -18,7 +18,7 @@ services:
     networks:
       - zero-to-running-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-postgres} -d ${DATABASE_NAME:-zero_to_running_dev}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-postgres} -d ${DATABASE_NAME:-zero_to_running_dev} && PGPASSWORD=${DATABASE_PASSWORD} psql -U ${DATABASE_USER:-postgres} -d ${DATABASE_NAME:-zero_to_running_dev} -c 'SELECT 1' -q -t || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchHealth, type HealthResponse } from './config/api';
+import { useLogger } from './utils/logger';
 
 type HealthStatus = 'loading' | 'healthy' | 'unhealthy' | 'unavailable';
 
@@ -7,24 +8,34 @@ function App() {
   const [healthStatus, setHealthStatus] = useState<HealthStatus>('loading');
   const [healthData, setHealthData] = useState<HealthResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const log = useLogger('App');
 
   useEffect(() => {
+    log.lifecycle('mount');
+
     const checkHealth = async () => {
       try {
+        log.debug('Checking backend health status');
         const data = await fetchHealth();
         setHealthData(data);
         setHealthStatus(data.status === 'ok' ? 'healthy' : 'unhealthy');
         setError(null);
+        log.info('Health check successful', { status: data.status });
       } catch (err) {
         setHealthStatus('unavailable');
-        setError(err instanceof Error ? err.message : 'Unknown error occurred');
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+        setError(errorMessage);
+        log.error('Health check failed', { error: errorMessage });
       }
     };
 
     checkHealth();
     // Optional: Poll health status every 30 seconds
     const interval = setInterval(checkHealth, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      log.lifecycle('unmount');
+    };
   }, []);
 
   const getStatusColor = () => {

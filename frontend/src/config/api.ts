@@ -4,6 +4,8 @@
  * Handles backend API URL configuration and provides HTTP client utilities.
  */
 
+import { logger } from '../utils/logger';
+
 // Get API URL from environment variable or use default
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -19,11 +21,25 @@ export interface HealthResponse {
  * Fetch backend health status
  */
 export async function fetchHealth(): Promise<HealthResponse> {
-  const response = await fetch(`${API_URL}/health`);
+  const startTime = Date.now();
+  const url = `${API_URL}/health`;
 
-  if (!response.ok) {
-    throw new Error(`Health check failed: ${response.status} ${response.statusText}`);
+  logger.apiRequest('GET', url, undefined, 'API');
+
+  try {
+    const response = await fetch(url);
+    const duration = Date.now() - startTime;
+
+    if (!response.ok) {
+      logger.apiResponse('GET', url, response.status, duration, 'API');
+      throw new Error(`Health check failed: ${response.status} ${response.statusText}`);
+    }
+
+    logger.apiResponse('GET', url, response.status, duration, 'API');
+    return response.json();
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    logger.apiError('GET', url, error instanceof Error ? error : String(error), 'API');
+    throw error;
   }
-
-  return response.json();
 }

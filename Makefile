@@ -42,9 +42,8 @@ down: ## Stop all running services
 
 ##@ Monitoring
 
-logs: ## View logs from all services (Coming in Story 2.4)
-	@echo "Logs command will be implemented in Story 2.4"
-	@echo "Will display real-time logs from all running services"
+logs: ## View logs from all services (use service=<name> to filter, follow=true to stream, lines=N for line count)
+	@bash infrastructure/scripts/logs.sh $(service) $(follow) $(lines)
 
 status: ## Check health status of all services (Coming in Story 2.5)
 	@echo "Status command will be implemented in Story 2.5"

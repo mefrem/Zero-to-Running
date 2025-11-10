@@ -4,7 +4,8 @@
  */
 
 import { createClient, RedisClientType } from 'redis';
-import { logger } from '../utils/logger';
+import { logger, sanitizeConnectionString } from '../utils/logger';
+import { logRedisOperation } from '../middleware/logging';
 
 // Redis configuration from environment variables
 const redisHost = process.env.REDIS_HOST || 'redis';
@@ -23,11 +24,15 @@ export const redisClient: RedisClientType = createClient({
   socket: {
     reconnectStrategy: (retries) => {
       if (retries > 10) {
-        logger.error('Redis reconnection limit exceeded');
+        logger.error({ msg: 'Redis reconnection limit exceeded' });
         return new Error('Redis reconnection limit exceeded');
       }
       const delay = Math.min(retries * 100, 3000);
-      logger.warn(`Redis reconnecting in ${delay}ms (attempt ${retries})`);
+      logger.warn({
+        msg: 'Redis reconnecting',
+        delay,
+        attempt: retries,
+      });
       return delay;
     },
   },
@@ -35,15 +40,23 @@ export const redisClient: RedisClientType = createClient({
 
 // Handle Redis events
 redisClient.on('error', (err) => {
-  logger.error('Redis client error', { error: err.message });
+  logger.error({
+    msg: 'Redis client error',
+    error: err.message,
+  });
 });
 
 redisClient.on('connect', () => {
-  logger.info('Redis client connecting...');
+  const sanitizedUrl = sanitizeConnectionString(redisUrl);
+  logger.info({
+    msg: 'Redis client connecting',
+    connection: sanitizedUrl,
+  });
 });
 
 redisClient.on('ready', () => {
-  logger.info('Redis client ready', {
+  logger.info({
+    msg: 'Redis client ready',
     host: redisHost,
     port: redisPort,
     db: redisDb,
@@ -51,11 +64,11 @@ redisClient.on('ready', () => {
 });
 
 redisClient.on('reconnecting', () => {
-  logger.warn('Redis client reconnecting...');
+  logger.warn({ msg: 'Redis client reconnecting' });
 });
 
 redisClient.on('end', () => {
-  logger.info('Redis client connection closed');
+  logger.info({ msg: 'Redis client connection closed' });
 });
 
 /**
@@ -65,10 +78,11 @@ redisClient.on('end', () => {
 export async function connectRedis(): Promise<boolean> {
   try {
     await redisClient.connect();
-    logger.info('Redis connection established');
+    logger.info({ msg: 'Redis connection established' });
     return true;
   } catch (error) {
-    logger.error('Redis connection failed', {
+    logger.error({
+      msg: 'Redis connection failed',
       error: error instanceof Error ? error.message : 'Unknown error',
       host: redisHost,
       port: redisPort,
@@ -84,10 +98,14 @@ export async function connectRedis(): Promise<boolean> {
 export async function testRedisConnection(): Promise<boolean> {
   try {
     const pong = await redisClient.ping();
-    logger.info('Redis ping successful', { response: pong });
+    logger.info({
+      msg: 'Redis ping successful',
+      response: pong,
+    });
     return pong === 'PONG';
   } catch (error) {
-    logger.error('Redis ping failed', {
+    logger.error({
+      msg: 'Redis ping failed',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
     return false;
@@ -101,10 +119,11 @@ export async function closeRedisConnection(): Promise<void> {
   try {
     if (redisClient.isOpen) {
       await redisClient.quit();
-      logger.info('Redis connection closed gracefully');
+      logger.info({ msg: 'Redis connection closed gracefully' });
     }
   } catch (error) {
-    logger.error('Error closing Redis connection', {
+    logger.error({
+      msg: 'Error closing Redis connection',
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
