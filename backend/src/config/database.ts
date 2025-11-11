@@ -6,6 +6,7 @@
 import { Pool, PoolConfig, QueryResult } from 'pg';
 import { logger, sanitizeConnectionString } from '../utils/logger';
 import { logDatabaseQuery } from '../middleware/logging';
+import { createDatabaseConnectionError, createDatabaseQueryError } from '../utils/error-messages';
 
 // Database configuration from environment variables
 const dbConfig: PoolConfig = {
@@ -75,14 +76,15 @@ export async function executeQuery<T = any>(
     return result;
   } catch (error) {
     const duration = Date.now() - startTime;
-    logger.error({
-      msg: 'Query execution failed',
-      query,
-      duration,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      requestId,
-    });
-    throw error;
+
+    // Create enhanced error with query context
+    const enhancedError = createDatabaseQueryError(error, query, requestId);
+
+    // Log structured error
+    enhancedError.log();
+
+    // Throw enhanced error for upstream handling
+    throw enhancedError;
   }
 }
 
@@ -104,13 +106,23 @@ export async function testDatabaseConnection(): Promise<boolean> {
 
     return true;
   } catch (error) {
-    logger.error({
-      msg: 'Database connection failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      host: dbConfig.host,
-      port: dbConfig.port,
-      database: dbConfig.database,
-    });
+    // Create enhanced error with discrimination and actionable guidance
+    const enhancedError = createDatabaseConnectionError(
+      error,
+      {
+        host: dbConfig.host as string,
+        port: dbConfig.port as number,
+        database: dbConfig.database as string,
+        user: dbConfig.user as string,
+      }
+    );
+
+    // Log structured error
+    enhancedError.log();
+
+    // Display formatted error message
+    console.error(enhancedError.format());
+
     return false;
   }
 }

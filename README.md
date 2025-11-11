@@ -1087,6 +1087,8 @@ For detailed cache documentation and troubleshooting, see [infrastructure/cache/
 
 For comprehensive troubleshooting guidance, common issues, debugging commands, and service-specific debugging guides, see the **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)**.
 
+> **Enhanced Error Messages**: The application now provides clear, actionable error messages with "what went wrong", "why it happened", and "next steps" guidance. All errors include error codes and documentation references. See [ERROR_CODES.md](docs/ERROR_CODES.md) for a complete catalog of error codes and their meanings.
+
 ### Quick Solutions for Common Issues
 
 #### Services won't start

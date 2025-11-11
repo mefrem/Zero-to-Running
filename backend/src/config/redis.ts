@@ -6,6 +6,7 @@
 import { createClient, RedisClientType } from 'redis';
 import { logger, sanitizeConnectionString } from '../utils/logger';
 import { logRedisOperation } from '../middleware/logging';
+import { createRedisConnectionError, createRedisOperationError } from '../utils/error-messages';
 
 // Redis configuration from environment variables
 const redisHost = process.env.REDIS_HOST || 'redis';
@@ -81,12 +82,21 @@ export async function connectRedis(): Promise<boolean> {
     logger.info({ msg: 'Redis connection established' });
     return true;
   } catch (error) {
-    logger.error({
-      msg: 'Redis connection failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      host: redisHost,
-      port: redisPort,
-    });
+    // Create enhanced error with discrimination and actionable guidance
+    const enhancedError = createRedisConnectionError(
+      error,
+      {
+        host: redisHost,
+        port: redisPort,
+      }
+    );
+
+    // Log structured error
+    enhancedError.log();
+
+    // Display formatted error message
+    console.error(enhancedError.format());
+
     return false;
   }
 }
@@ -104,10 +114,15 @@ export async function testRedisConnection(): Promise<boolean> {
     });
     return pong === 'PONG';
   } catch (error) {
-    logger.error({
-      msg: 'Redis ping failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
+    // Create enhanced error for operation failure
+    const enhancedError = createRedisOperationError('PING', error);
+
+    // Log structured error
+    enhancedError.log();
+
+    // Display formatted error message
+    console.error(enhancedError.format());
+
     return false;
   }
 }

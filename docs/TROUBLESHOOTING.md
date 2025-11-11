@@ -2,6 +2,8 @@
 
 Comprehensive troubleshooting guide for resolving common issues in the Zero-to-Running development environment.
 
+> **New!** For a complete catalog of error codes with detailed explanations, see [ERROR_CODES.md](ERROR_CODES.md). All errors in the application now follow enhanced error message standards with "what", "why", and "next steps" format. For developer guidance on creating error messages, see [ERROR_MESSAGE_STANDARDS.md](ERROR_MESSAGE_STANDARDS.md).
+
 ## Table of Contents
 
 - [Quick Reference](#quick-reference)
