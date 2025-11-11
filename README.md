@@ -15,6 +15,59 @@ Zero-to-Running is a monorepo designed to demonstrate modern full-stack developm
 
 The entire stack starts with a single `make dev` command and includes health checks, logging, and graceful shutdown capabilities.
 
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Zero-to-Running Stack                       │
+└─────────────────────────────────────────────────────────────────┘
+
+                          Browser (localhost)
+                                  │
+                                  │ HTTP
+                                  ▼
+                    ┌─────────────────────────┐
+                    │   Frontend (React)      │
+                    │   Port: 3000            │
+                    │   • TypeScript          │
+                    │   • Tailwind CSS        │
+                    │   • Hot Reload          │
+                    └───────────┬─────────────┘
+                                │
+                                │ API Calls
+                                ▼
+                    ┌─────────────────────────┐
+                    │   Backend (Node.js)     │
+                    │   Port: 3001            │
+                    │   • Dora Framework      │
+                    │   • TypeScript          │
+                    │   • Health Checks       │
+                    │   • Structured Logging  │
+                    └────┬──────────────┬─────┘
+                         │              │
+             ┌───────────┘              └──────────┐
+             │                                     │
+             ▼                                     ▼
+    ┌──────────────────┐                 ┌──────────────────┐
+    │   PostgreSQL     │                 │   Redis Cache    │
+    │   Port: 5432     │                 │   Port: 6379     │
+    │   • Persistent   │                 │   • Sessions     │
+    │   • Migrations   │                 │   • Caching      │
+    │   • Health Check │                 │   • AOF Persist  │
+    └──────────────────┘                 └──────────────────┘
+
+              All services connected via Docker network
+              (zero-to-running-network with DNS resolution)
+```
+
+**Key Features:**
+- Single command startup: `make dev`
+- Automatic health verification with 2-minute timeout
+- Hot-reload for frontend and backend development
+- Persistent data with Docker volumes
+- Service-to-service DNS resolution
+- Comprehensive logging and monitoring
+
 ## Network Architecture
 
 All services communicate through a custom Docker network (`zero-to-running-network`) that provides automatic DNS-based service discovery. This means services can reference each other by name (e.g., `postgres:5432`, `redis:6379`) without hardcoding IP addresses.
@@ -94,6 +147,158 @@ The application will be available at:
 - Backend API: http://localhost:3001
 - PostgreSQL: localhost:5432
 - Redis: localhost:6379
+
+### Expected Output
+
+When you run `make dev`, you should see output similar to this:
+
+```
+=====================================
+  Zero-to-Running Development
+=====================================
+  Profile: full
+=====================================
+
+Checking Docker daemon...
+✓ Docker daemon is running
+Checking Docker Compose installation...
+✓ Docker Compose installed: Docker Compose version v2.20.0
+Checking environment configuration...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Environment Configuration Validation
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✓ All required variables are set
+✓ All port assignments are valid
+✓ Configuration validation passed
+
+✓ Environment configuration valid
+Checking for port conflicts...
+✓ No port conflicts detected
+
+Starting Docker Compose services for 'full' profile...
+
+Services to start: postgres redis backend frontend
+
+[+] Running 4/4
+ ✔ Container zero-to-running-postgres  Started
+ ✔ Container zero-to-running-redis     Started
+ ✔ Container zero-to-running-backend   Started
+ ✔ Container zero-to-running-frontend  Started
+
+✓ Services started in detached mode (profile: full)
+Verifying services are healthy (profile: full)...
+
+  Database:    Healthy ✓
+  Backend:     Healthy ✓
+  Cache:       Healthy ✓
+  Frontend:    Healthy ✓
+
+✓ All services in profile are healthy
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SUCCESS! Environment ready for development.
+Profile: full
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Service Access:
+
+Frontend:   http://localhost:3000
+Backend:    http://localhost:3001
+
+Connection Strings:
+
+Database:   postgresql://postgres:CHANGE_ME_postgres_123@localhost:5432/zero_to_running_dev
+Redis:      redis://:CHANGE_ME_redis_123@localhost:6379
+
+Useful Commands:
+
+  make down    - Stop all services
+  make logs    - View service logs
+  make status  - Check service health
+
+Press Ctrl+C to stop monitoring (services will continue running)
+```
+
+**Success Indicators:**
+
+All services should show `Healthy ✓` status. You can verify by:
+
+1. **Frontend**: Open http://localhost:3000 in your browser - you should see the React application
+2. **Backend API**: Check http://localhost:3001/health/ready - should return HTTP 200 with status "ready"
+3. **Database**: Connection string works with any PostgreSQL client
+4. **Redis**: Backend can connect (verified through health check)
+
+If any service shows `Failed ✗`, the startup script will provide troubleshooting suggestions and offer to display logs.
+
+## Next Steps
+
+Once your development environment is running, here's what to do next:
+
+### Learn the System
+
+1. **Explore the Architecture**
+   - Review [docs/NETWORK_ARCHITECTURE.md](docs/NETWORK_ARCHITECTURE.md) - Service communication patterns and Docker networking
+   - Check [Repository Structure](#repository-structure) section below for code organization
+   - Explore the [docs/prd.md](docs/prd.md) for product requirements and feature overview
+
+2. **Review API Documentation**
+   - Backend health endpoint: http://localhost:3001/health/ready
+   - Backend dashboard endpoint: http://localhost:3001/health/dashboard
+   - Health check reference: [docs/HEALTH_VERIFICATION.md](docs/HEALTH_VERIFICATION.md)
+
+3. **Understand Configuration**
+   - Configuration guide: [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
+   - Secret management: [docs/SECRET_MANAGEMENT.md](docs/SECRET_MANAGEMENT.md)
+   - Multi-profile support: [docs/PROFILES.md](docs/PROFILES.md)
+
+### Start Developing
+
+1. **Try Your First Change**
+   - Modify `frontend/src/App.tsx` and see hot-reload in action
+   - Add a new backend route in `backend/src/routes/`
+   - Changes should reflect immediately (no rebuild needed)
+
+2. **Work with the Database**
+   - Seed test data: `make seed` (adds 5 test users with password: `password123`)
+   - Connect with psql: `psql postgresql://postgres:CHANGE_ME_postgres_123@localhost:5432/zero_to_running_dev`
+   - View schema: [infrastructure/database/init.sql](infrastructure/database/init.sql)
+   - Seeding guide: [docs/DATABASE_SEEDING.md](docs/DATABASE_SEEDING.md)
+
+3. **Monitor Your Services**
+   - Check status: `make status` - Shows health, uptime, CPU, memory for all services
+   - View logs: `make logs` - Stream logs from all services
+   - Web dashboard: http://localhost:3000/#dashboard - Real-time monitoring UI
+
+### Common Development Workflows
+
+**Working on Backend Only?** Use the minimal profile for faster startup:
+```bash
+make dev profile=minimal  # Only backend + database (30-45s startup)
+```
+
+**Need to reset the database?**
+```bash
+make reset-db seed=true   # Drop, recreate, and seed with test data
+```
+
+**Want to see detailed logs?**
+```bash
+make logs service=backend follow=true  # Stream backend logs in real-time
+```
+
+**Configuration changes?** Restart to apply:
+```bash
+make down && make dev  # Stop and restart with new config
+```
+
+### Resources
+
+- **Troubleshooting Guide**: See [Troubleshooting](#troubleshooting) section below
+- **Logging Documentation**: [docs/LOGGING.md](docs/LOGGING.md)
+- **Monitoring Dashboard**: [docs/MONITORING.md](docs/MONITORING.md)
+- **Project Documentation**: Browse the [docs/](docs/) directory for comprehensive guides
 
 ## Development Profiles
 
