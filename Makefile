@@ -45,9 +45,8 @@ down: ## Stop all running services
 logs: ## View logs from all services (use service=<name> to filter, follow=true to stream, lines=N for line count)
 	@bash infrastructure/scripts/logs.sh $(service) $(follow) $(lines)
 
-status: ## Check health status of all services (Coming in Story 2.5)
-	@echo "Status command will be implemented in Story 2.5"
-	@echo "Will verify that all services are healthy and responding"
+status: ## Check health status of all services with resource usage and port mappings
+	@bash infrastructure/scripts/status.sh
 
 ##@ Database
 
