@@ -28,6 +28,68 @@ export interface ValidationResult {
 }
 
 /**
+ * Mock secret detection result
+ */
+export interface MockSecret {
+  name: string;
+  value: string;
+}
+
+/**
+ * Detect if a value is a mock secret (starts with CHANGE_ME_)
+ */
+export function isMockSecret(value: string | undefined): boolean {
+  return value?.startsWith('CHANGE_ME_') ?? false;
+}
+
+/**
+ * Detect all mock secrets in configuration
+ */
+export function detectMockSecrets(config: AppConfig): MockSecret[] {
+  const mockSecrets: MockSecret[] = [];
+
+  if (isMockSecret(config.database.password)) {
+    mockSecrets.push({
+      name: 'DATABASE_PASSWORD',
+      value: config.database.password,
+    });
+  }
+
+  if (config.redis.password && isMockSecret(config.redis.password)) {
+    mockSecrets.push({
+      name: 'REDIS_PASSWORD',
+      value: config.redis.password,
+    });
+  }
+
+  if (isMockSecret(config.security.sessionSecret)) {
+    mockSecrets.push({
+      name: 'SESSION_SECRET',
+      value: config.security.sessionSecret,
+    });
+  }
+
+  if (config.security.jwtSecret && isMockSecret(config.security.jwtSecret)) {
+    mockSecrets.push({
+      name: 'JWT_SECRET',
+      value: config.security.jwtSecret,
+    });
+  }
+
+  return mockSecrets;
+}
+
+/**
+ * Format mock secret value for display (show prefix and redact rest)
+ */
+export function formatMockSecretValue(value: string): string {
+  if (value.length <= 20) {
+    return value;
+  }
+  return value.substring(0, 20) + '...';
+}
+
+/**
  * Validate port number is in valid range
  */
 export function validatePort(port: number, name: string = 'port'): void {
@@ -139,10 +201,23 @@ export function validateRange(
 
 /**
  * Validate database password is not using default/weak values
+ * Returns array of warnings (non-blocking for mock secrets)
  */
-export function validateDatabasePassword(password: string): void {
+export function validateDatabasePassword(password: string): string[] {
+  const warnings: string[] = [];
+
   validateRequired(password, 'DATABASE_PASSWORD');
 
+  // Check for mock secret (CHANGE_ME_ prefix) - warn but don't fail
+  if (isMockSecret(password)) {
+    warnings.push(
+      `DATABASE_PASSWORD is using a mock development value (${formatMockSecretValue(password)}). ` +
+      `This is safe for local development but must be replaced in production.`
+    );
+    return warnings; // Don't apply other validations to mock secrets
+  }
+
+  // Check for truly weak passwords (not mock secrets)
   const weakPasswords = [
     'password',
     'postgres',
@@ -150,12 +225,11 @@ export function validateDatabasePassword(password: string): void {
     'admin',
     'root',
     'test',
-    'CHANGE_ME_secure_password_123',
   ];
 
   if (weakPasswords.includes(password)) {
     throw new ConfigError(
-      `DATABASE_PASSWORD is using a default/weak password: ${password}. ` +
+      `DATABASE_PASSWORD is using a weak password: ${password}. ` +
       `Please set a strong, unique password for security.`
     );
   }
@@ -166,23 +240,37 @@ export function validateDatabasePassword(password: string): void {
       `Current length: ${password.length}`
     );
   }
+
+  return warnings;
 }
 
 /**
  * Validate session secret is not using default/weak values
+ * Returns array of warnings (non-blocking for mock secrets)
  */
-export function validateSessionSecret(secret: string): void {
+export function validateSessionSecret(secret: string): string[] {
+  const warnings: string[] = [];
+
   validateRequired(secret, 'SESSION_SECRET');
 
+  // Check for mock secret (CHANGE_ME_ prefix) - warn but don't fail
+  if (isMockSecret(secret)) {
+    warnings.push(
+      `SESSION_SECRET is using a mock development value (${formatMockSecretValue(secret)}). ` +
+      `This is safe for local development but must be replaced in production.`
+    );
+    return warnings; // Don't apply other validations to mock secrets
+  }
+
+  // Check for truly weak secrets (not mock secrets)
   const weakSecrets = [
     'secret',
     'session',
-    'CHANGE_ME_random_session_secret_key_xyz789',
   ];
 
   if (weakSecrets.includes(secret)) {
     throw new ConfigError(
-      `SESSION_SECRET is using a default/weak value. ` +
+      `SESSION_SECRET is using a weak value. ` +
       `Please generate a strong random secret for security.`
     );
   }
@@ -194,6 +282,8 @@ export function validateSessionSecret(secret: string): void {
       `Generate one with: openssl rand -base64 32`
     );
   }
+
+  return warnings;
 }
 
 /**
@@ -244,7 +334,10 @@ export function validateConfig(config: AppConfig): ValidationResult {
     validateRequired(config.database.host, 'DATABASE_HOST');
     validateRequired(config.database.name, 'DATABASE_NAME');
     validateRequired(config.database.user, 'DATABASE_USER');
-    validateDatabasePassword(config.database.password);
+
+    // Validate database password (returns warnings for mock secrets)
+    const dbPasswordWarnings = validateDatabasePassword(config.database.password);
+    warnings.push(...dbPasswordWarnings);
 
     // Validate pool settings
     validateRange(config.database.poolMin, 1, 100, 'DATABASE_POOL_MIN');
@@ -261,20 +354,25 @@ export function validateConfig(config: AppConfig): ValidationResult {
     validateRequired(config.redis.host, 'REDIS_HOST');
 
     // Validate security settings
-    validateSessionSecret(config.security.sessionSecret);
+    const sessionSecretWarnings = validateSessionSecret(config.security.sessionSecret);
+    warnings.push(...sessionSecretWarnings);
 
+    // Validate JWT secret if provided
     if (config.security.jwtSecret) {
-      if (config.security.jwtSecret.length < 32) {
+      // Check for mock secret - warn but don't fail
+      if (isMockSecret(config.security.jwtSecret)) {
         warnings.push(
-          `JWT_SECRET should be at least 32 characters long for security. ` +
-          `Current length: ${config.security.jwtSecret.length}`
+          `JWT_SECRET is using a mock development value (${formatMockSecretValue(config.security.jwtSecret)}). ` +
+          `This is safe for local development but must be replaced in production.`
         );
-      }
-
-      if (config.security.jwtSecret === 'CHANGE_ME_jwt_secret_key_abc456') {
-        errors.push(
-          `JWT_SECRET is using default value. Please set a strong random secret.`
-        );
+      } else {
+        // Apply strict validation for non-mock secrets
+        if (config.security.jwtSecret.length < 32) {
+          warnings.push(
+            `JWT_SECRET should be at least 32 characters long for security. ` +
+            `Current length: ${config.security.jwtSecret.length}`
+          );
+        }
       }
     }
 
@@ -363,6 +461,38 @@ export function formatValidationResult(result: ValidationResult): string {
       lines.push(`  ${index + 1}. ${warning}`);
     });
   }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format mock secret warning message for console output
+ */
+export function formatMockSecretWarning(mockSecrets: MockSecret[]): string {
+  if (mockSecrets.length === 0) {
+    return '';
+  }
+
+  const lines: string[] = [
+    '',
+    '================================================================================',
+    '⚠️  WARNING: Mock secrets detected in use (development only!)',
+    '================================================================================',
+    '',
+    'The following mock secrets are currently configured:',
+  ];
+
+  mockSecrets.forEach(secret => {
+    lines.push(`  • ${secret.name} (set to: ${formatMockSecretValue(secret.value)})`);
+  });
+
+  lines.push('');
+  lines.push('These are safe for local development, but should NEVER be used in production.');
+  lines.push('');
+  lines.push('For production deployment, see: /docs/SECRET_MANAGEMENT.md');
+  lines.push('Generate strong secrets with: openssl rand -base64 32');
+  lines.push('================================================================================');
+  lines.push('');
 
   return lines.join('\n');
 }

@@ -11,7 +11,13 @@ import { testDatabaseConnection, closeDatabaseConnection } from './config/databa
 import { connectRedis, closeRedisConnection, testRedisConnection } from './config/redis';
 import healthRouter from './routes/health';
 import { config, getConfigSummary } from './config/env';
-import { validateConfig, formatValidationResult, ConfigError } from './utils/config-validator';
+import {
+  validateConfig,
+  formatValidationResult,
+  ConfigError,
+  detectMockSecrets,
+  formatMockSecretWarning,
+} from './utils/config-validator';
 
 // Load environment variables
 dotenv.config();
@@ -67,6 +73,22 @@ async function startApplication(): Promise<void> {
     }
 
     logger.info({ msg: 'Configuration validated successfully' });
+
+    // Check for mock secrets and display warning
+    const mockSecrets = detectMockSecrets(config);
+    if (mockSecrets.length > 0) {
+      // Display prominent warning to console
+      console.warn(formatMockSecretWarning(mockSecrets));
+
+      // Log to structured logging
+      logger.warn({
+        msg: 'Mock secrets detected in configuration',
+        mockSecrets: mockSecrets.map(s => s.name),
+        count: mockSecrets.length,
+        environment: config.app.env,
+        documentation: '/docs/SECRET_MANAGEMENT.md',
+      });
+    }
 
     // Log configuration summary
     logger.info({

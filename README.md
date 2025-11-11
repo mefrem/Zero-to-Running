@@ -224,6 +224,101 @@ make down && make dev
 
 For comprehensive configuration documentation, see [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
+## Secret Management
+
+Zero-to-Running uses a **mock secret pattern** for development that teaches production-ready practices while remaining safe and convenient.
+
+### Mock Secrets in Development
+
+The `.env.example` file contains development-only secrets prefixed with `CHANGE_ME_`:
+
+```bash
+DATABASE_PASSWORD=CHANGE_ME_postgres_123
+REDIS_PASSWORD=CHANGE_ME_redis_123
+SESSION_SECRET=CHANGE_ME_session_secret_32_character_minimum
+JWT_SECRET=CHANGE_ME_jwt_secret_32_character_minimum
+```
+
+**These are safe for local development** and work out of the box. When you start the application, you'll see a warning if mock secrets are detected:
+
+```
+================================================================================
+⚠️  WARNING: Mock secrets detected in use (development only!)
+================================================================================
+
+The following mock secrets are currently configured:
+  • DATABASE_PASSWORD (set to: CHANGE_ME_postgres_123)
+  • REDIS_PASSWORD (set to: CHANGE_ME_redis_123)
+  • SESSION_SECRET (set to: CHANGE_ME_session_sec...)
+  • JWT_SECRET (set to: CHANGE_ME_jwt_secret...)
+
+These are safe for local development, but should NEVER be used in production.
+================================================================================
+```
+
+**This warning is intentional and expected** in local development. It does NOT prevent the application from starting.
+
+### Quick Start: Using Mock Secrets
+
+For local development, you can use the mock secrets as-is:
+
+```bash
+# Copy .env.example to .env
+cp .env.example .env
+
+# Start with mock secrets (safe for development)
+make dev
+```
+
+The application will start successfully and display the mock secret warning.
+
+### Generating Real Secrets (Optional)
+
+For enhanced local security or production deployment, generate real secrets:
+
+```bash
+# Generate a strong password (32 characters)
+openssl rand -base64 32
+
+# Copy to your .env file
+DATABASE_PASSWORD=<generated-value>
+SESSION_SECRET=<generated-value>
+JWT_SECRET=<generated-value>
+```
+
+Real secrets (without the `CHANGE_ME_` prefix) won't trigger warnings.
+
+### Production Deployment
+
+**IMPORTANT**: Never use mock secrets in production! For production deployments, see:
+
+- **[Secret Management Guide](docs/SECRET_MANAGEMENT.md)** - Comprehensive guide to secret handling
+- **Production Integration Examples:**
+  - [AWS Secrets Manager](docs/examples/secret-management-aws.md) - For AWS deployments
+  - [HashiCorp Vault](docs/examples/secret-management-vault.md) - For multi-cloud/on-premises
+  - [Kubernetes Secrets](docs/examples/secret-management-kubernetes.md) - For Kubernetes deployments
+  - [CI/CD Environment Injection](docs/examples/secret-management-env-inject.md) - For simple deployments
+
+### Best Practices
+
+**✓ Do:**
+
+- Use mock secrets (`CHANGE_ME_` prefix) for local development
+- Generate unique secrets for each environment (dev, staging, production)
+- Never commit `.env` file to version control (it's git-ignored)
+- Use a secret management system in production
+- Rotate secrets regularly (every 90 days)
+
+**✗ Don't:**
+
+- Use mock secrets in production
+- Hardcode secrets in source code
+- Commit real secrets to version control
+- Share secrets via email or chat
+- Use the same secrets across environments
+
+For detailed secret management patterns, database credential handling, and production integration, see [docs/SECRET_MANAGEMENT.md](docs/SECRET_MANAGEMENT.md).
+
 ## Repository Structure
 
 This monorepo is organized to separate concerns while keeping everything in one place:

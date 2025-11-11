@@ -121,11 +121,17 @@ validate_log_format() {
   return 0
 }
 
+# Check if value is a mock secret (starts with CHANGE_ME_)
+is_mock_secret() {
+  local value=$1
+  [[ "$value" == CHANGE_ME_* ]]
+}
+
 # Check for weak/default passwords
 validate_password() {
   local var_name=$1
   local password=$2
-  local weak_passwords=("password" "postgres" "123456" "admin" "root" "test" "CHANGE_ME_secure_password_123")
+  local weak_passwords=("password" "postgres" "123456" "admin" "root" "test")
 
   # Check if password is empty
   if [ -z "$password" ]; then
@@ -133,10 +139,16 @@ validate_password() {
     return 1
   fi
 
-  # Check for weak passwords
+  # Check for mock secret (CHANGE_ME_ prefix) - warn but don't fail
+  if is_mock_secret "$password"; then
+    add_warning "$var_name is using a mock development value (${password:0:20}...). Safe for local development, replace in production."
+    return 0
+  fi
+
+  # Check for truly weak passwords (not mock secrets)
   for weak in "${weak_passwords[@]}"; do
     if [ "$password" == "$weak" ]; then
-      add_error "$var_name is using a default/weak password. Please set a strong password."
+      add_error "$var_name is using a weak password. Please set a strong password."
       return 1
     fi
   done
@@ -153,7 +165,7 @@ validate_password() {
 validate_secret() {
   local var_name=$1
   local secret=$2
-  local weak_secrets=("secret" "session" "CHANGE_ME_random_session_secret_key_xyz789" "CHANGE_ME_jwt_secret_key_abc456")
+  local weak_secrets=("secret" "session")
 
   # Check if secret is empty
   if [ -z "$secret" ]; then
@@ -161,10 +173,16 @@ validate_secret() {
     return 1
   fi
 
-  # Check for weak secrets
+  # Check for mock secret (CHANGE_ME_ prefix) - warn but don't fail
+  if is_mock_secret "$secret"; then
+    add_warning "$var_name is using a mock development value (${secret:0:20}...). Safe for local development, replace in production."
+    return 0
+  fi
+
+  # Check for truly weak secrets (not mock secrets)
   for weak in "${weak_secrets[@]}"; do
     if [ "$secret" == "$weak" ]; then
-      add_error "$var_name is using a default/weak value. Please generate a strong random secret."
+      add_error "$var_name is using a weak value. Please generate a strong random secret."
       return 1
     fi
   done
@@ -340,6 +358,46 @@ if [ $WARNING_COUNT -gt 0 ]; then
   echo ""
 fi
 
+# Check for mock secrets and display prominent warning
+detect_mock_secrets() {
+  local mock_secrets=()
+
+  if is_mock_secret "$(get_value 'DATABASE_PASSWORD')"; then
+    mock_secrets+=("DATABASE_PASSWORD")
+  fi
+
+  if is_mock_secret "$(get_value 'REDIS_PASSWORD')"; then
+    mock_secrets+=("REDIS_PASSWORD")
+  fi
+
+  if is_mock_secret "$(get_value 'SESSION_SECRET')"; then
+    mock_secrets+=("SESSION_SECRET")
+  fi
+
+  if is_mock_secret "$(get_value 'JWT_SECRET')"; then
+    mock_secrets+=("JWT_SECRET")
+  fi
+
+  if [ ${#mock_secrets[@]} -gt 0 ]; then
+    echo ""
+    print_color "$YELLOW" "================================================================================"
+    print_color "$YELLOW" "⚠️  WARNING: Mock secrets detected in use (development only!)"
+    print_color "$YELLOW" "================================================================================"
+    echo ""
+    print_color "$YELLOW" "The following mock secrets are currently configured:"
+    for secret in "${mock_secrets[@]}"; do
+      print_color "$YELLOW" "  • $secret"
+    done
+    echo ""
+    print_color "$YELLOW" "These are safe for local development, but should NEVER be used in production."
+    echo ""
+    print_color "$YELLOW" "For production deployment, see: /docs/SECRET_MANAGEMENT.md"
+    print_color "$YELLOW" "Generate strong secrets with: openssl rand -base64 32"
+    print_color "$YELLOW" "================================================================================"
+    echo ""
+  fi
+}
+
 # Display summary
 if [ $ERROR_COUNT -eq 0 ] && [ $WARNING_COUNT -eq 0 ]; then
   print_color "$GREEN" "✓ Configuration is valid!"
@@ -352,11 +410,17 @@ if [ $ERROR_COUNT -eq 0 ] && [ $WARNING_COUNT -eq 0 ]; then
   print_color "$GREEN" "  • Log Level: ${log_level:-INFO (default)}"
   print_color "$GREEN" "  • Log Format: ${log_format:-pretty (default)}"
   echo ""
+
+  # Display mock secret warning if applicable
+  detect_mock_secrets
 elif [ $ERROR_COUNT -eq 0 ]; then
   print_color "$GREEN" "✓ Configuration is valid (with warnings)"
   echo ""
   print_color "$YELLOW" "Please review the warnings above."
   echo ""
+
+  # Display mock secret warning if applicable
+  detect_mock_secrets
 else
   print_color "$RED" "✗ Configuration validation failed"
   echo ""
