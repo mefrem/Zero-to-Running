@@ -587,6 +587,73 @@ verify_database_health() {
     fi
 }
 
+# Check if database has seed data
+database_has_data() {
+    # Load environment variables
+    set -a
+    source "${PROJECT_ROOT}/.env" 2>/dev/null || true
+    set +a
+
+    local DATABASE_HOST=${DATABASE_HOST:-localhost}
+    local DATABASE_PORT=${DATABASE_PORT:-5432}
+    local DATABASE_NAME=${DATABASE_NAME:-zero_to_running_dev}
+    local DATABASE_USER=${DATABASE_USER:-postgres}
+    local DATABASE_PASSWORD=${DATABASE_PASSWORD:-}
+
+    export PGPASSWORD="$DATABASE_PASSWORD"
+
+    # Check if users table has any records
+    local user_count=$(psql -h "$DATABASE_HOST" -p "$DATABASE_PORT" -U "$DATABASE_USER" -d "$DATABASE_NAME" -t -c "SELECT COUNT(*) FROM users;" 2>/dev/null | xargs || echo "0")
+
+    if [ "$user_count" -gt 0 ]; then
+        return 0  # Has data
+    else
+        return 1  # Empty
+    fi
+}
+
+# Perform auto-seeding if enabled and database is empty
+auto_seed_database() {
+    # Load environment variables
+    set -a
+    source "${PROJECT_ROOT}/.env" 2>/dev/null || true
+    set +a
+
+    local AUTO_SEED_DATABASE=${AUTO_SEED_DATABASE:-false}
+
+    # Check if auto-seeding is enabled
+    if [ "$AUTO_SEED_DATABASE" != "true" ]; then
+        return 0
+    fi
+
+    print_status "${BLUE}" "Checking for auto-seed configuration..."
+
+    # Check if database already has data
+    if database_has_data; then
+        print_status "${YELLOW}" "⚠ Database already contains data - skipping auto-seed"
+        print_status "${BLUE}" "ℹ Auto-seed only runs on empty database"
+        return 0
+    fi
+
+    # Database is empty and auto-seed is enabled
+    print_status "${GREEN}" "✓ AUTO_SEED_DATABASE=true and database is empty"
+    print_status "${BLUE}" "Running seed scripts..."
+    echo ""
+
+    # Run seed script
+    if bash "${SCRIPT_DIR}/seed-database.sh"; then
+        echo ""
+        print_status "${GREEN}" "✓ Database auto-seeded successfully"
+        print_status "${BLUE}" "ℹ Test users available with password: password123"
+        return 0
+    else
+        echo ""
+        print_status "${YELLOW}" "⚠ Database auto-seed failed (non-fatal)"
+        print_status "${YELLOW}" "You can manually seed later with: make seed"
+        return 0  # Non-fatal - allow startup to continue
+    fi
+}
+
 # Offer to show logs for a failed service
 offer_logs_viewing() {
     local service=$1
@@ -708,6 +775,11 @@ wait_for_all_services() {
         offer_logs_viewing "postgres"
     else
         display_service_status "Database" "${GREEN}Healthy ✓${NC}"
+
+        # Auto-seed database if enabled and empty
+        echo ""
+        auto_seed_database
+        echo ""
     fi
 
     # Check Backend (always included)

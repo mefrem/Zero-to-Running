@@ -454,6 +454,8 @@ make dev       # Start all services in development mode with health verification
 make down      # Stop all running services
 make logs      # View logs from all services (filter by service, follow, or limit lines)
 make status    # Check health status and resource usage of all services
+make seed      # Seed database with development test data
+make reset-db  # Reset database (drop, recreate, run migrations) - add seed=true to also seed
 ```
 
 ### Health Verification
@@ -734,6 +736,87 @@ make dev
 ```
 
 For detailed database documentation, see [infrastructure/database/README.md](infrastructure/database/README.md).
+
+### Database Seeding
+
+Populate the database with test data for immediate development and testing.
+
+**Quick Start:**
+
+```bash
+# Seed database with test data
+make seed
+```
+
+**Available Test Data:**
+- 5 test users (admin, regular users, unverified, disabled)
+- 2 active user sessions
+- 3 API keys (active and expired)
+- Audit logs and health check records
+
+**All test users use password:** `password123`
+
+Example test users:
+- `admin@example.com` - Admin user
+- `john.doe@example.com` - Regular user
+- `developer@example.com` - Developer user
+
+**Auto-Seeding on Startup:**
+
+Enable automatic seeding when database is empty:
+
+```bash
+# In .env file
+AUTO_SEED_DATABASE=true
+```
+
+Then start services:
+
+```bash
+make dev  # Automatically seeds if database is empty
+```
+
+**Reset Database:**
+
+```bash
+# Reset database without seed data
+make reset-db
+
+# Reset database and reseed with test data
+make reset-db seed=true
+```
+
+⚠️ **WARNING**: `make reset-db` is destructive and will delete all data!
+
+**Idempotency:**
+Seed scripts can be run multiple times safely without creating duplicate data:
+
+```bash
+make seed  # First run - inserts data
+make seed  # Second run - updates data (no duplicates)
+```
+
+**Expected Output:**
+
+```
+==============================================
+  Database Seeding
+==============================================
+
+ℹ Loading environment configuration...
+✓ Environment loaded
+ℹ Database: zero_to_running_dev @ localhost:5432
+✓ Database connection verified
+ℹ Found 1 seed script(s)
+✓ All 1 script(s) executed successfully
+✓ Found 5 user(s) in database
+✓ Database seeding completed!
+
+ℹ Test user credentials (all users):
+ℹ   Password: password123
+```
+
+For comprehensive seeding documentation, see [docs/DATABASE_SEEDING.md](docs/DATABASE_SEEDING.md).
 
 ## Cache Setup
 

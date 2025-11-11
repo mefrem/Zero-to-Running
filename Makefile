@@ -54,13 +54,15 @@ status: ## Check health status of all services with resource usage and port mapp
 
 ##@ Database
 
-seed: ## Seed database with development data (Coming in Story 3.5)
-	@echo "Seed command will be implemented in Story 3.5"
-	@echo "Will populate database with sample data for development"
+seed: ## Seed database with development data
+	@bash infrastructure/scripts/seed-database.sh
 
-reset-db: ## Reset and reseed database (Coming in Story 3.5)
-	@echo "Reset-db command will be implemented in Story 3.5"
-	@echo "Will drop, recreate, and reseed the database"
+reset-db: ## Reset database (drop, recreate, run migrations) - add seed=true to also seed
+	@if [ "$(seed)" = "true" ]; then \
+		bash infrastructure/scripts/reset-database.sh --seed --force; \
+	else \
+		bash infrastructure/scripts/reset-database.sh --force; \
+	fi
 
 ##@ Configuration
 
