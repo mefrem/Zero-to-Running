@@ -15,6 +15,59 @@ Zero-to-Running is a monorepo designed to demonstrate modern full-stack developm
 
 The entire stack starts with a single `make dev` command and includes health checks, logging, and graceful shutdown capabilities.
 
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Zero-to-Running Stack                       │
+└─────────────────────────────────────────────────────────────────┘
+
+                          Browser (localhost)
+                                  │
+                                  │ HTTP
+                                  ▼
+                    ┌─────────────────────────┐
+                    │   Frontend (React)      │
+                    │   Port: 3000            │
+                    │   • TypeScript          │
+                    │   • Tailwind CSS        │
+                    │   • Hot Reload          │
+                    └───────────┬─────────────┘
+                                │
+                                │ API Calls
+                                ▼
+                    ┌─────────────────────────┐
+                    │   Backend (Node.js)     │
+                    │   Port: 3001            │
+                    │   • Dora Framework      │
+                    │   • TypeScript          │
+                    │   • Health Checks       │
+                    │   • Structured Logging  │
+                    └────┬──────────────┬─────┘
+                         │              │
+             ┌───────────┘              └──────────┐
+             │                                     │
+             ▼                                     ▼
+    ┌──────────────────┐                 ┌──────────────────┐
+    │   PostgreSQL     │                 │   Redis Cache    │
+    │   Port: 5432     │                 │   Port: 6379     │
+    │   • Persistent   │                 │   • Sessions     │
+    │   • Migrations   │                 │   • Caching      │
+    │   • Health Check │                 │   • AOF Persist  │
+    └──────────────────┘                 └──────────────────┘
+
+              All services connected via Docker network
+              (zero-to-running-network with DNS resolution)
+```
+
+**Key Features:**
+- Single command startup: `make dev`
+- Automatic health verification with 2-minute timeout
+- Hot-reload for frontend and backend development
+- Persistent data with Docker volumes
+- Service-to-service DNS resolution
+- Comprehensive logging and monitoring
+
 ## Network Architecture
 
 All services communicate through a custom Docker network (`zero-to-running-network`) that provides automatic DNS-based service discovery. This means services can reference each other by name (e.g., `postgres:5432`, `redis:6379`) without hardcoding IP addresses.
@@ -95,6 +148,449 @@ The application will be available at:
 - PostgreSQL: localhost:5432
 - Redis: localhost:6379
 
+### Expected Output
+
+When you run `make dev`, you should see output similar to this:
+
+```
+=====================================
+  Zero-to-Running Development
+=====================================
+  Profile: full
+=====================================
+
+Checking Docker daemon...
+✓ Docker daemon is running
+Checking Docker Compose installation...
+✓ Docker Compose installed: Docker Compose version v2.20.0
+Checking environment configuration...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Environment Configuration Validation
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✓ All required variables are set
+✓ All port assignments are valid
+✓ Configuration validation passed
+
+✓ Environment configuration valid
+Checking for port conflicts...
+✓ No port conflicts detected
+
+Starting Docker Compose services for 'full' profile...
+
+Services to start: postgres redis backend frontend
+
+[+] Running 4/4
+ ✔ Container zero-to-running-postgres  Started
+ ✔ Container zero-to-running-redis     Started
+ ✔ Container zero-to-running-backend   Started
+ ✔ Container zero-to-running-frontend  Started
+
+✓ Services started in detached mode (profile: full)
+Verifying services are healthy (profile: full)...
+
+  Database:    Healthy ✓
+  Backend:     Healthy ✓
+  Cache:       Healthy ✓
+  Frontend:    Healthy ✓
+
+✓ All services in profile are healthy
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SUCCESS! Environment ready for development.
+Profile: full
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Service Access:
+
+Frontend:   http://localhost:3000
+Backend:    http://localhost:3001
+
+Connection Strings:
+
+Database:   postgresql://postgres:CHANGE_ME_postgres_123@localhost:5432/zero_to_running_dev
+Redis:      redis://:CHANGE_ME_redis_123@localhost:6379
+
+Useful Commands:
+
+  make down    - Stop all services
+  make logs    - View service logs
+  make status  - Check service health
+
+Press Ctrl+C to stop monitoring (services will continue running)
+```
+
+**Success Indicators:**
+
+All services should show `Healthy ✓` status. You can verify by:
+
+1. **Frontend**: Open http://localhost:3000 in your browser - you should see the React application
+2. **Backend API**: Check http://localhost:3001/health/ready - should return HTTP 200 with status "ready"
+3. **Database**: Connection string works with any PostgreSQL client
+4. **Redis**: Backend can connect (verified through health check)
+
+If any service shows `Failed ✗`, the startup script will provide troubleshooting suggestions and offer to display logs.
+
+## Next Steps
+
+Once your development environment is running, here's what to do next:
+
+### Learn the System
+
+1. **Explore the Architecture**
+   - Review [docs/NETWORK_ARCHITECTURE.md](docs/NETWORK_ARCHITECTURE.md) - Service communication patterns and Docker networking
+   - Check [Repository Structure](#repository-structure) section below for code organization
+   - Explore the [docs/prd.md](docs/prd.md) for product requirements and feature overview
+
+2. **Review API Documentation**
+   - Backend health endpoint: http://localhost:3001/health/ready
+   - Backend dashboard endpoint: http://localhost:3001/health/dashboard
+   - Health check reference: [docs/HEALTH_VERIFICATION.md](docs/HEALTH_VERIFICATION.md)
+
+3. **Understand Configuration**
+   - Configuration guide: [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
+   - Secret management: [docs/SECRET_MANAGEMENT.md](docs/SECRET_MANAGEMENT.md)
+   - Multi-profile support: [docs/PROFILES.md](docs/PROFILES.md)
+
+### Start Developing
+
+1. **Try Your First Change**
+   - Modify `frontend/src/App.tsx` and see hot-reload in action
+   - Add a new backend route in `backend/src/routes/`
+   - Changes should reflect immediately (no rebuild needed)
+
+2. **Work with the Database**
+   - Seed test data: `make seed` (adds 5 test users with password: `password123`)
+   - Connect with psql: `psql postgresql://postgres:CHANGE_ME_postgres_123@localhost:5432/zero_to_running_dev`
+   - View schema: [infrastructure/database/init.sql](infrastructure/database/init.sql)
+   - Seeding guide: [docs/DATABASE_SEEDING.md](docs/DATABASE_SEEDING.md)
+
+3. **Monitor Your Services**
+   - Check status: `make status` - Shows health, uptime, CPU, memory for all services
+   - View logs: `make logs` - Stream logs from all services
+   - Web dashboard: http://localhost:3000/#dashboard - Real-time monitoring UI
+
+### Common Development Workflows
+
+**Working on Backend Only?** Use the minimal profile for faster startup:
+```bash
+make dev profile=minimal  # Only backend + database (30-45s startup)
+```
+
+**Need to reset the database?**
+```bash
+make reset-db seed=true   # Drop, recreate, and seed with test data
+```
+
+**Want to see detailed logs?**
+```bash
+make logs service=backend follow=true  # Stream backend logs in real-time
+```
+
+**Configuration changes?** Restart to apply:
+```bash
+make down && make dev  # Stop and restart with new config
+```
+
+### Resources
+
+- **Troubleshooting Guide**: See [Troubleshooting](#troubleshooting) section below
+- **Logging Documentation**: [docs/LOGGING.md](docs/LOGGING.md)
+- **Monitoring Dashboard**: [docs/MONITORING.md](docs/MONITORING.md)
+- **Project Documentation**: Browse the [docs/](docs/) directory for comprehensive guides
+
+## Development Profiles
+
+Zero-to-Running supports multiple development profiles to optimize your workflow based on the type of work you're doing.
+
+### Available Profiles
+
+**Minimal Profile** - Backend + Database Only
+- Faster startup (~30-45 seconds)
+- Lower resource usage
+- Ideal for API development and backend work
+
+```bash
+make dev profile=minimal
+```
+
+**Full Profile** - All Services (Default)
+- Complete development environment
+- All services running (frontend, backend, database, Redis)
+- Best for full-stack development
+
+```bash
+make dev profile=full
+# OR simply:
+make dev
+```
+
+### Profile Commands
+
+```bash
+# List all available profiles
+make profiles
+
+# Start with specific profile
+make dev profile=minimal
+make dev profile=full
+
+# Switch profiles (stop current, start new)
+make down && make dev profile=minimal
+```
+
+### Profile Comparison
+
+| Feature | Minimal | Full |
+|---------|---------|------|
+| PostgreSQL | ✓ | ✓ |
+| Backend API | ✓ | ✓ |
+| Frontend | ✗ | ✓ |
+| Redis | ✗ | ✓ |
+| Startup Time | 30-45s | 60-90s |
+| Memory | 400-600 MB | 1-1.5 GB |
+
+### When to Use Each Profile
+
+**Use Minimal Profile When:**
+- Working on backend API endpoints
+- Developing database schema changes
+- Testing backend services independently
+- You need fast iteration and lower resource usage
+
+**Use Full Profile When:**
+- Developing full-stack features
+- Testing integration between all services
+- Working on frontend components
+- Running end-to-end tests
+
+For detailed profile documentation, see [docs/PROFILES.md](docs/PROFILES.md).
+
+## Configuration
+
+Zero-to-Running uses environment variables for all configuration, making it easy to customize your local development environment.
+
+### Setting Up Your Environment
+
+1. **Copy the example configuration:**
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Required Variables:**
+   Edit `.env` and set these required variables:
+   ```bash
+   DATABASE_PASSWORD=your_secure_password_here
+   SESSION_SECRET=your_random_session_secret_here
+   ```
+
+3. **Validate Your Configuration:**
+   ```bash
+   make config
+   ```
+
+This will check that:
+- All required variables are set
+- Port numbers are valid and not duplicated
+- Passwords and secrets are not using default values
+- Log levels and formats are correct
+
+### Key Configuration Options
+
+**Service Ports:**
+```bash
+FRONTEND_PORT=3000       # React application
+BACKEND_PORT=3001        # API server
+DATABASE_PORT=5432       # PostgreSQL
+REDIS_PORT=6379          # Redis cache
+```
+
+**Logging:**
+```bash
+LOG_LEVEL=INFO          # ERROR, WARN, INFO, DEBUG
+LOG_FORMAT=pretty       # pretty (dev) or json (production)
+VITE_LOG_LEVEL=INFO     # Frontend log level
+```
+
+**Database:**
+```bash
+DATABASE_HOST=localhost
+DATABASE_NAME=zero_to_running_dev
+DATABASE_USER=postgres
+DATABASE_PASSWORD=CHANGE_ME_secure_password_123
+```
+
+**Security:**
+```bash
+SESSION_SECRET=CHANGE_ME_random_session_secret_key_xyz789
+JWT_SECRET=CHANGE_ME_jwt_secret_key_abc456  # Optional, for JWT auth
+```
+
+### Configuration Commands
+
+```bash
+# Validate configuration before starting
+make config
+
+# Start services (automatically validates config)
+make dev
+```
+
+### Common Configuration Scenarios
+
+**Change Service Ports:**
+```bash
+# In .env file
+FRONTEND_PORT=4000
+BACKEND_PORT=5000
+
+# Verify changes
+make config
+
+# Restart services
+make down && make dev
+```
+
+**Enable Debug Logging:**
+```bash
+# In .env file
+LOG_LEVEL=DEBUG
+VITE_LOG_LEVEL=DEBUG
+
+# Restart to apply
+make down && make dev
+```
+
+**Use Different Database Credentials:**
+```bash
+# In .env file
+DATABASE_USER=myuser
+DATABASE_PASSWORD=mypassword
+DATABASE_NAME=mydb
+
+# Restart to apply
+make down && make dev
+```
+
+### Troubleshooting Configuration
+
+**Common Issues:**
+
+1. **"DATABASE_PASSWORD is not set"**
+   - Edit `.env` and set `DATABASE_PASSWORD` to a secure value
+   - Run `make config` to verify
+
+2. **"Duplicate port assignments"**
+   - Check that all service ports are unique in `.env`
+   - Use `make config` to identify conflicts
+
+3. **"Invalid LOG_LEVEL"**
+   - Must be one of: ERROR, WARN, INFO, DEBUG
+   - Check for typos in `.env`
+
+4. **Configuration validation fails on startup**
+   - Run `make config` to see detailed error messages
+   - Fix errors in `.env` file
+   - Restart with `make dev`
+
+For comprehensive configuration documentation, see [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+
+## Secret Management
+
+Zero-to-Running uses a **mock secret pattern** for development that teaches production-ready practices while remaining safe and convenient.
+
+### Mock Secrets in Development
+
+The `.env.example` file contains development-only secrets prefixed with `CHANGE_ME_`:
+
+```bash
+DATABASE_PASSWORD=CHANGE_ME_postgres_123
+REDIS_PASSWORD=CHANGE_ME_redis_123
+SESSION_SECRET=CHANGE_ME_session_secret_32_character_minimum
+JWT_SECRET=CHANGE_ME_jwt_secret_32_character_minimum
+```
+
+**These are safe for local development** and work out of the box. When you start the application, you'll see a warning if mock secrets are detected:
+
+```
+================================================================================
+⚠️  WARNING: Mock secrets detected in use (development only!)
+================================================================================
+
+The following mock secrets are currently configured:
+  • DATABASE_PASSWORD (set to: CHANGE_ME_postgres_123)
+  • REDIS_PASSWORD (set to: CHANGE_ME_redis_123)
+  • SESSION_SECRET (set to: CHANGE_ME_session_sec...)
+  • JWT_SECRET (set to: CHANGE_ME_jwt_secret...)
+
+These are safe for local development, but should NEVER be used in production.
+================================================================================
+```
+
+**This warning is intentional and expected** in local development. It does NOT prevent the application from starting.
+
+### Quick Start: Using Mock Secrets
+
+For local development, you can use the mock secrets as-is:
+
+```bash
+# Copy .env.example to .env
+cp .env.example .env
+
+# Start with mock secrets (safe for development)
+make dev
+```
+
+The application will start successfully and display the mock secret warning.
+
+### Generating Real Secrets (Optional)
+
+For enhanced local security or production deployment, generate real secrets:
+
+```bash
+# Generate a strong password (32 characters)
+openssl rand -base64 32
+
+# Copy to your .env file
+DATABASE_PASSWORD=<generated-value>
+SESSION_SECRET=<generated-value>
+JWT_SECRET=<generated-value>
+```
+
+Real secrets (without the `CHANGE_ME_` prefix) won't trigger warnings.
+
+### Production Deployment
+
+**IMPORTANT**: Never use mock secrets in production! For production deployments, see:
+
+- **[Secret Management Guide](docs/SECRET_MANAGEMENT.md)** - Comprehensive guide to secret handling
+- **Production Integration Examples:**
+  - [AWS Secrets Manager](docs/examples/secret-management-aws.md) - For AWS deployments
+  - [HashiCorp Vault](docs/examples/secret-management-vault.md) - For multi-cloud/on-premises
+  - [Kubernetes Secrets](docs/examples/secret-management-kubernetes.md) - For Kubernetes deployments
+  - [CI/CD Environment Injection](docs/examples/secret-management-env-inject.md) - For simple deployments
+
+### Best Practices
+
+**✓ Do:**
+
+- Use mock secrets (`CHANGE_ME_` prefix) for local development
+- Generate unique secrets for each environment (dev, staging, production)
+- Never commit `.env` file to version control (it's git-ignored)
+- Use a secret management system in production
+- Rotate secrets regularly (every 90 days)
+
+**✗ Don't:**
+
+- Use mock secrets in production
+- Hardcode secrets in source code
+- Commit real secrets to version control
+- Share secrets via email or chat
+- Use the same secrets across environments
+
+For detailed secret management patterns, database credential handling, and production integration, see [docs/SECRET_MANAGEMENT.md](docs/SECRET_MANAGEMENT.md).
+
 ## Repository Structure
 
 This monorepo is organized to separate concerns while keeping everything in one place:
@@ -163,6 +659,8 @@ make dev       # Start all services in development mode with health verification
 make down      # Stop all running services
 make logs      # View logs from all services (filter by service, follow, or limit lines)
 make status    # Check health status and resource usage of all services
+make seed      # Seed database with development test data
+make reset-db  # Reset database (drop, recreate, run migrations) - add seed=true to also seed
 ```
 
 ### Health Verification
@@ -444,6 +942,87 @@ make dev
 
 For detailed database documentation, see [infrastructure/database/README.md](infrastructure/database/README.md).
 
+### Database Seeding
+
+Populate the database with test data for immediate development and testing.
+
+**Quick Start:**
+
+```bash
+# Seed database with test data
+make seed
+```
+
+**Available Test Data:**
+- 5 test users (admin, regular users, unverified, disabled)
+- 2 active user sessions
+- 3 API keys (active and expired)
+- Audit logs and health check records
+
+**All test users use password:** `password123`
+
+Example test users:
+- `admin@example.com` - Admin user
+- `john.doe@example.com` - Regular user
+- `developer@example.com` - Developer user
+
+**Auto-Seeding on Startup:**
+
+Enable automatic seeding when database is empty:
+
+```bash
+# In .env file
+AUTO_SEED_DATABASE=true
+```
+
+Then start services:
+
+```bash
+make dev  # Automatically seeds if database is empty
+```
+
+**Reset Database:**
+
+```bash
+# Reset database without seed data
+make reset-db
+
+# Reset database and reseed with test data
+make reset-db seed=true
+```
+
+⚠️ **WARNING**: `make reset-db` is destructive and will delete all data!
+
+**Idempotency:**
+Seed scripts can be run multiple times safely without creating duplicate data:
+
+```bash
+make seed  # First run - inserts data
+make seed  # Second run - updates data (no duplicates)
+```
+
+**Expected Output:**
+
+```
+==============================================
+  Database Seeding
+==============================================
+
+ℹ Loading environment configuration...
+✓ Environment loaded
+ℹ Database: zero_to_running_dev @ localhost:5432
+✓ Database connection verified
+ℹ Found 1 seed script(s)
+✓ All 1 script(s) executed successfully
+✓ Found 5 user(s) in database
+✓ Database seeding completed!
+
+ℹ Test user credentials (all users):
+ℹ   Password: password123
+```
+
+For comprehensive seeding documentation, see [docs/DATABASE_SEEDING.md](docs/DATABASE_SEEDING.md).
+
 ## Cache Setup
 
 The Redis cache starts automatically with `make dev` and is accessible at `localhost:6379`.
@@ -506,7 +1085,13 @@ For detailed cache documentation and troubleshooting, see [infrastructure/cache/
 
 ## Troubleshooting
 
-### Services won't start
+For comprehensive troubleshooting guidance, common issues, debugging commands, and service-specific debugging guides, see the **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)**.
+
+> **Enhanced Error Messages**: The application now provides clear, actionable error messages with "what went wrong", "why it happened", and "next steps" guidance. All errors include error codes and documentation references. See [ERROR_CODES.md](docs/ERROR_CODES.md) for a complete catalog of error codes and their meanings.
+
+### Quick Solutions for Common Issues
+
+#### Services won't start
 
 **Issue**: `make dev` fails or services don't start
 
@@ -565,6 +1150,10 @@ For detailed cache documentation and troubleshooting, see [infrastructure/cache/
 - **macOS**: Install via Xcode Command Line Tools: `xcode-select --install`
 - **Linux**: Install via package manager: `sudo apt-get install build-essential` (Debian/Ubuntu)
 - **Windows**: Use WSL2 (Windows Subsystem for Linux)
+
+---
+
+**For more troubleshooting help**, including detailed debugging guides, FAQ, and escalation procedures, see the **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)**
 
 ## Contributing
 

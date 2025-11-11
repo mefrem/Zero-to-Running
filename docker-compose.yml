@@ -35,6 +35,8 @@ services:
       - redis-data:/data
     networks:
       - zero-to-running-network
+    profiles:
+      - full
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -59,6 +61,7 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      PROFILE: ${PROFILE:-full}
     ports:
       - "${BACKEND_PORT:-3001}:${BACKEND_PORT:-3001}"
       - "${NODE_DEBUG_PORT:-9229}:9229"
@@ -69,8 +72,6 @@ services:
       - zero-to-running-network
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:${BACKEND_PORT:-3001}/health"]
@@ -91,6 +92,7 @@ services:
       PORT: ${FRONTEND_PORT:-3000}
       VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
       VITE_PORT: ${FRONTEND_PORT:-3000}
+      PROFILE: ${PROFILE:-full}
     ports:
       - "${FRONTEND_PORT:-3000}:${FRONTEND_PORT:-3000}"
     volumes:
@@ -98,6 +100,8 @@ services:
       - /app/node_modules
     networks:
       - zero-to-running-network
+    profiles:
+      - full
     depends_on:
       backend:
         condition: service_healthy

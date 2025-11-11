@@ -10,13 +10,17 @@ import { requestLoggingMiddleware, errorLoggingMiddleware } from './middleware/l
 import { testDatabaseConnection, closeDatabaseConnection } from './config/database';
 import { connectRedis, closeRedisConnection, testRedisConnection } from './config/redis';
 import healthRouter from './routes/health';
+import { config, getConfigSummary } from './config/env';
+import {
+  validateConfig,
+  formatValidationResult,
+  ConfigError,
+  detectMockSecrets,
+  formatMockSecretWarning,
+} from './utils/config-validator';
 
 // Load environment variables
 dotenv.config();
-
-// Application configuration
-const PORT = parseInt(process.env.PORT || '3001', 10);
-const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Create Express application
 const app: Application = express();
@@ -47,12 +51,60 @@ app.use(errorLoggingMiddleware);
  */
 async function startApplication(): Promise<void> {
   try {
+    // Validate configuration before starting
+    logger.info({ msg: 'Validating configuration' });
+    const validationResult = validateConfig(config);
+
+    // Log warnings if any
+    if (validationResult.warnings.length > 0) {
+      validationResult.warnings.forEach(warning => {
+        logger.warn({ msg: 'Configuration warning', warning });
+      });
+    }
+
+    // Exit if validation failed
+    if (!validationResult.valid) {
+      logger.error({ msg: 'Configuration validation failed' });
+      validationResult.errors.forEach(error => {
+        logger.error({ msg: 'Configuration error', error });
+      });
+      console.error('\n' + formatValidationResult(validationResult));
+      process.exit(1);
+    }
+
+    logger.info({ msg: 'Configuration validated successfully' });
+
+    // Check for mock secrets and display warning
+    const mockSecrets = detectMockSecrets(config);
+    if (mockSecrets.length > 0) {
+      // Display prominent warning to console
+      console.warn(formatMockSecretWarning(mockSecrets));
+
+      // Log to structured logging
+      logger.warn({
+        msg: 'Mock secrets detected in configuration',
+        mockSecrets: mockSecrets.map(s => s.name),
+        count: mockSecrets.length,
+        environment: config.app.env,
+        documentation: '/docs/SECRET_MANAGEMENT.md',
+      });
+    }
+
+    // Log configuration summary
     logger.info({
       msg: 'Starting application',
-      environment: NODE_ENV,
-      port: PORT,
+      environment: config.app.env,
+      port: config.server.port,
       nodeVersion: process.version,
     });
+
+    // Log detailed configuration in debug mode
+    if (config.logging.level === 'debug') {
+      logger.debug({
+        msg: 'Loaded configuration',
+        config: getConfigSummary(),
+      });
+    }
 
     // Test database connection
     logger.info({ msg: 'Connecting to database' });
@@ -71,12 +123,12 @@ async function startApplication(): Promise<void> {
     }
 
     // Start HTTP server
-    const server = app.listen(PORT, () => {
+    const server = app.listen(config.server.port, () => {
       logger.info({
         msg: 'Application started successfully',
-        port: PORT,
-        environment: NODE_ENV,
-        healthEndpoint: `http://localhost:${PORT}/health`,
+        port: config.server.port,
+        environment: config.app.env,
+        healthEndpoint: `http://localhost:${config.server.port}/health`,
       });
     });
 
