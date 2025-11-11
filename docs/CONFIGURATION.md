@@ -942,6 +942,401 @@ FRONTEND_PORT=4000
 make down && make dev
 ```
 
+### Port Conflict Troubleshooting
+
+Port conflicts are one of the most common issues when starting Zero-to-Running. The startup script will automatically detect port conflicts and provide detailed information about which processes are using your configured ports.
+
+#### Understanding Port Conflicts
+
+**What causes port conflicts:**
+- Another Docker container using the port
+- System service (nginx, Apache, PostgreSQL) running on the port
+- Previous Zero-to-Running instance not fully stopped
+- Another development server (React, Node, Rails, etc.) using the port
+- IDE or debugger using the port
+
+#### Automatic Port Conflict Detection
+
+When you run `make dev`, the startup script automatically:
+1. Checks all configured ports (Frontend, Backend, Database, Redis)
+2. Identifies which processes are using conflicting ports
+3. Displays a detailed table with service name, port, process ID (PID), and process name
+4. Provides actionable solutions for each conflict
+
+**Example output:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PORT CONFLICTS DETECTED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2 port(s) required by Zero-to-Running are already in use:
+
+  Service      Port     PID      Process
+  ──────────── ──────── ──────── ────────────────────────────
+  Backend      3001     12345    node
+  Frontend     3000     67890    python3.11
+
+SUGGESTED SOLUTIONS:
+
+1. Port 3001 (Backend):
+
+   Option A: Stop the conflicting process
+   Kill process by PID:
+   kill 12345
+
+   Or view process details first:
+   ps -p 12345 -f
+   lsof -i :3001
+
+   Option B: Change the port in your .env file
+   Edit .env and change:
+   BACKEND_PORT=3002
+
+   Then restart: make dev
+```
+
+#### Common Port Conflict Scenarios
+
+##### Scenario 1: Another Docker Container Using the Port
+
+**Symptoms:**
+- Port conflict detected on startup
+- Process shows as `docker-proxy` or `com.docker.backend`
+
+**Diagnosis:**
+```bash
+# List all running Docker containers
+docker ps
+
+# Check which container is using the port
+docker ps --filter "publish=3000"
+
+# View container details
+docker inspect <container_id>
+```
+
+**Solution:**
+```bash
+# Option A: Stop the conflicting container
+docker stop <container_name>
+
+# Option B: Stop all Docker containers
+docker stop $(docker ps -aq)
+
+# Option C: Change port in .env
+FRONTEND_PORT=4000  # Or any other available port
+```
+
+##### Scenario 2: System Service Using the Port
+
+**Symptoms:**
+- Port conflict on Database (5432) or well-known ports
+- Process shows as `postgres`, `nginx`, `apache2`, etc.
+
+**Diagnosis:**
+```bash
+# Check if PostgreSQL service is running
+sudo systemctl status postgresql  # Linux
+brew services list | grep postgres  # macOS
+
+# Check if web server is running
+sudo systemctl status nginx  # Linux
+sudo systemctl status apache2  # Linux
+```
+
+**Solution:**
+```bash
+# Option A: Stop the system service
+sudo systemctl stop postgresql  # Linux
+brew services stop postgresql  # macOS
+
+# Option B: Use different port in .env
+DATABASE_PORT=5433  # PostgreSQL alternative
+FRONTEND_PORT=4000  # Nginx/Apache alternative
+```
+
+##### Scenario 3: Previous Zero-to-Running Instance Not Stopped
+
+**Symptoms:**
+- All ports conflict (3000, 3001, 5432, 6379)
+- Processes show as `node`, `postgres`, `redis-server`
+- Docker containers still running
+
+**Diagnosis:**
+```bash
+# Check Docker containers
+docker ps | grep zero-to-running
+
+# Check service status
+make status
+```
+
+**Solution:**
+```bash
+# Stop all services cleanly
+make down
+
+# If that doesn't work, force stop
+docker-compose down --remove-orphans
+
+# Or stop specific containers
+docker stop zero-to-running-backend zero-to-running-frontend
+docker stop zero-to-running-postgres zero-to-running-redis
+
+# Then restart
+make dev
+```
+
+##### Scenario 4: Development Server Already Running
+
+**Symptoms:**
+- Port conflict on 3000 or 3001
+- Process shows as `node`, `npm`, `vite`, `webpack-dev-server`
+
+**Diagnosis:**
+```bash
+# Find Node.js processes
+ps aux | grep node
+
+# Check specific port
+lsof -i :3000
+netstat -tlnp | grep :3000  # Linux
+```
+
+**Solution:**
+```bash
+# Option A: Stop the development server
+# Press Ctrl+C in the terminal running the server
+# Or kill by PID
+kill <pid>
+
+# Option B: Kill all Node processes (careful!)
+killall node  # macOS/Linux
+
+# Option C: Change port in .env
+FRONTEND_PORT=4000
+BACKEND_PORT=4001
+```
+
+##### Scenario 5: IDE Debugger Using the Port
+
+**Symptoms:**
+- Port conflict on debug port (9229 or similar)
+- Port conflict on backend/frontend ports
+- Process shows IDE name (VSCode, IntelliJ, etc.)
+
+**Solution:**
+```bash
+# Option A: Close debugging session in IDE
+# Stop all running debug configurations
+
+# Option B: Change debug port in .env
+NODE_DEBUG_PORT=9230
+
+# Option C: Configure IDE to use different ports
+```
+
+#### Manual Port Conflict Resolution
+
+If automatic detection doesn't provide enough information:
+
+**Step 1: Identify the process using the port**
+
+```bash
+# macOS and Linux (preferred method)
+lsof -i :3000
+
+# Linux with ss
+ss -tlnp | grep :3000
+
+# Linux with netstat
+netstat -tlnp | grep :3000
+
+# Windows (PowerShell)
+Get-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess
+```
+
+**Step 2: Get detailed process information**
+
+```bash
+# View full process details
+ps -p <PID> -f
+
+# View process command line
+ps -p <PID> -o command
+
+# View all processes listening on any port
+lsof -i -P -n | grep LISTEN
+```
+
+**Step 3: Decide on action**
+
+- **If it's your process:** Stop it or use a different port
+- **If it's a system service:** Stop it or reconfigure Zero-to-Running
+- **If it's critical:** Change Zero-to-Running ports in `.env`
+- **If it's unknown:** Research the process before killing it
+
+**Step 4: Take action**
+
+```bash
+# Stop process gracefully
+kill <PID>
+
+# Force stop if needed (use with caution)
+kill -9 <PID>
+
+# Or change port in .env
+vim .env  # Edit port configuration
+make config  # Validate changes
+make dev  # Restart with new configuration
+```
+
+#### Changing Ports to Avoid Conflicts
+
+**Edit `.env` file:**
+
+```bash
+# Example: Change all ports to avoid conflicts
+FRONTEND_PORT=4000     # Was 3000
+BACKEND_PORT=4001      # Was 3001
+DATABASE_PORT=5433     # Was 5432
+REDIS_PORT=6380        # Was 6379
+NODE_DEBUG_PORT=9230   # Was 9229
+```
+
+**Validate and restart:**
+
+```bash
+# Validate new configuration
+make config
+
+# Stop current services
+make down
+
+# Start with new ports
+make dev
+```
+
+**Port selection guidelines:**
+- Use ports above 1024 (unprivileged ports)
+- Avoid well-known ports (1-1023) unless necessary
+- Check port isn't already in use: `lsof -i :<port>`
+- Keep ports sequential for easy remembering (e.g., 4000, 4001, 4002)
+- Document custom ports in your team's README
+
+#### Port Conflict Prevention
+
+**Best practices:**
+
+1. **Always stop services cleanly:**
+   ```bash
+   make down  # Instead of Ctrl+C or force quit
+   ```
+
+2. **Check status before starting:**
+   ```bash
+   docker ps  # See what's running
+   make status  # Check Zero-to-Running status
+   ```
+
+3. **Use unique ports per project:**
+   ```bash
+   # Project 1: 3000-3003
+   # Project 2: 4000-4003
+   # Project 3: 5000-5003
+   ```
+
+4. **Document your port usage:**
+   ```bash
+   # Create a local note
+   echo "Zero-to-Running: 3000-3001, 5432, 6379" >> ~/ports.txt
+   ```
+
+5. **Stop unused Docker containers:**
+   ```bash
+   # Remove stopped containers
+   docker container prune
+
+   # Stop all containers
+   docker stop $(docker ps -aq)
+   ```
+
+#### Advanced Port Troubleshooting
+
+**Check all listening ports:**
+
+```bash
+# macOS/Linux - show all listening ports
+lsof -i -P -n | grep LISTEN
+
+# Linux - show all TCP listening ports with process info
+ss -tlnp
+
+# macOS - show all listening ports grouped by process
+lsof -i -P | grep LISTEN | awk '{print $1, $9}' | sort | uniq
+```
+
+**Find ports used by Docker:**
+
+```bash
+# List all Docker port mappings
+docker ps --format "table {{.Names}}\t{{.Ports}}"
+
+# Detailed inspection
+docker inspect <container> | grep -A 10 "Ports"
+```
+
+**Test if port is accessible:**
+
+```bash
+# Test with netcat
+nc -zv localhost 3000
+
+# Test with telnet
+telnet localhost 3000
+
+# Test with curl
+curl http://localhost:3000
+```
+
+**Release port on specific OS:**
+
+```bash
+# Linux - sometimes ports stay in TIME_WAIT
+# Wait 60 seconds or adjust kernel parameters
+sudo sysctl -w net.ipv4.tcp_fin_timeout=30
+
+# macOS - restart network if port stuck
+sudo ifconfig en0 down && sudo ifconfig en0 up
+```
+
+#### Getting Help with Port Conflicts
+
+If you're still experiencing port conflicts:
+
+1. **Run startup with detailed output:**
+   ```bash
+   make dev
+   # When prompted, select 'y' to see detailed process information
+   ```
+
+2. **Check logs:**
+   ```bash
+   make logs
+   ```
+
+3. **Verify configuration:**
+   ```bash
+   make config
+   cat .env | grep PORT
+   ```
+
+4. **Report the issue:**
+   - Include output from `lsof -i -P -n | grep LISTEN`
+   - Include output from `docker ps`
+   - Include your `.env` file (without secrets)
+   - Include error message from startup script
+
 #### "Configuration validation failed on startup"
 
 **Cause:** `.env` file has errors

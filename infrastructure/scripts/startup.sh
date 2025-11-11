@@ -75,6 +75,185 @@ check_docker_compose() {
     print_status "${GREEN}" "✓ Docker Compose installed: ${version}"
 }
 
+# Get process information for a port using lsof
+get_process_info_lsof() {
+    local port=$1
+
+    # Use lsof to get process info (works on Linux and macOS)
+    # Output format: PID COMMAND
+    local output=$(lsof -i ":${port}" -sTCP:LISTEN -t -n 2>/dev/null | head -n 1)
+
+    if [ -n "${output}" ]; then
+        local pid="${output}"
+        local process=$(ps -p "${pid}" -o comm= 2>/dev/null || echo "unknown")
+        echo "${pid}|${process}"
+        return 0
+    fi
+
+    return 1
+}
+
+# Get process information for a port using ss/netstat (fallback)
+get_process_info_netstat() {
+    local port=$1
+
+    # Try ss first (modern Linux)
+    if command -v ss >/dev/null 2>&1; then
+        # ss output format includes PID when run with -p (requires sudo for other users' processes)
+        local output=$(ss -tlnp 2>/dev/null | grep ":${port} " | head -n 1)
+        if [ -n "${output}" ]; then
+            # Extract PID from ss output (format: users:(("process",pid=1234,fd=3)))
+            local pid=$(echo "${output}" | grep -oP 'pid=\K[0-9]+' | head -n 1)
+            if [ -n "${pid}" ]; then
+                local process=$(ps -p "${pid}" -o comm= 2>/dev/null || echo "unknown")
+                echo "${pid}|${process}"
+                return 0
+            fi
+        fi
+    fi
+
+    # Try netstat as fallback
+    if command -v netstat >/dev/null 2>&1; then
+        local output=$(netstat -tlnp 2>/dev/null | grep ":${port} " | head -n 1)
+        if [ -n "${output}" ]; then
+            # Extract PID from netstat output (format: PID/program)
+            local pid=$(echo "${output}" | awk '{print $7}' | cut -d'/' -f1)
+            if [ -n "${pid}" ] && [ "${pid}" != "-" ]; then
+                local process=$(ps -p "${pid}" -o comm= 2>/dev/null || echo "unknown")
+                echo "${pid}|${process}"
+                return 0
+            fi
+        fi
+    fi
+
+    return 1
+}
+
+# Check if a port is in use
+check_port_in_use() {
+    local port=$1
+
+    # Try lsof first (most reliable, works on Linux and macOS)
+    if command -v lsof >/dev/null 2>&1; then
+        if lsof -i ":${port}" -sTCP:LISTEN -t 2>/dev/null | grep -q .; then
+            return 0
+        fi
+    fi
+
+    # Try ss (modern Linux)
+    if command -v ss >/dev/null 2>&1; then
+        if ss -tuln 2>/dev/null | grep -q ":${port} "; then
+            return 0
+        fi
+    fi
+
+    # Try netstat (fallback)
+    if command -v netstat >/dev/null 2>&1; then
+        if netstat -tuln 2>/dev/null | grep -q ":${port} "; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+# Display port conflict information in a formatted table
+display_port_conflicts() {
+    local -n conflict_data=$1
+    local num_conflicts=${#conflict_data[@]}
+
+    echo ""
+    print_status "${RED}" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    print_status "${RED}" "PORT CONFLICTS DETECTED"
+    print_status "${RED}" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    print_status "${YELLOW}" "${num_conflicts} port(s) required by Zero-to-Running are already in use:"
+    echo ""
+
+    # Table header
+    printf "  ${BOLD}%-12s %-8s %-8s %-30s${NC}\n" "Service" "Port" "PID" "Process"
+    printf "  %-12s %-8s %-8s %-30s\n" "────────────" "────────" "────────" "──────────────────────────────"
+
+    # Table rows
+    for conflict in "${conflict_data[@]}"; do
+        IFS='|' read -r service port pid process <<< "${conflict}"
+        printf "  ${YELLOW}%-12s %-8s %-8s %-30s${NC}\n" "${service}" "${port}" "${pid}" "${process}"
+    done
+
+    echo ""
+}
+
+# Display solution suggestions for port conflicts
+display_port_solutions() {
+    local -n conflict_data=$1
+
+    print_status "${CYAN}" "${BOLD}SUGGESTED SOLUTIONS:${NC}"
+    echo ""
+
+    local conflict_num=1
+    for conflict in "${conflict_data[@]}"; do
+        IFS='|' read -r service port pid process <<< "${conflict}"
+
+        print_status "${CYAN}" "${BOLD}${conflict_num}. Port ${port} (${service}):${NC}"
+        echo ""
+
+        # Solution 1: Stop the conflicting process
+        print_status "${NC}" "   ${BOLD}Option A: Stop the conflicting process${NC}"
+        if [ "${pid}" != "unknown" ] && [ "${pid}" != "-" ]; then
+            print_status "${NC}" "   Kill process by PID:"
+            echo -e "   ${GREEN}kill ${pid}${NC}"
+            echo ""
+            print_status "${NC}" "   Or view process details first:"
+            echo -e "   ${GREEN}ps -p ${pid} -f${NC}"
+            if command -v lsof >/dev/null 2>&1; then
+                echo -e "   ${GREEN}lsof -i :${port}${NC}"
+            fi
+        else
+            print_status "${NC}" "   Check which process is using the port:"
+            if command -v lsof >/dev/null 2>&1; then
+                echo -e "   ${GREEN}lsof -i :${port}${NC}"
+            fi
+            if command -v ss >/dev/null 2>&1; then
+                echo -e "   ${GREEN}ss -tlnp | grep :${port}${NC}"
+            elif command -v netstat >/dev/null 2>&1; then
+                echo -e "   ${GREEN}netstat -tlnp | grep :${port}${NC}"
+            fi
+        fi
+        echo ""
+
+        # Solution 2: Change port in .env
+        print_status "${NC}" "   ${BOLD}Option B: Change the port in your .env file${NC}"
+        local env_var=""
+        case "${service}" in
+            "Frontend") env_var="FRONTEND_PORT" ;;
+            "Backend") env_var="BACKEND_PORT" ;;
+            "PostgreSQL") env_var="DATABASE_PORT" ;;
+            "Redis") env_var="REDIS_PORT" ;;
+        esac
+
+        if [ -n "${env_var}" ]; then
+            local suggested_port=$((port + 1))
+            print_status "${NC}" "   Edit .env and change:"
+            echo -e "   ${GREEN}${env_var}=${suggested_port}${NC}"
+            echo ""
+            print_status "${NC}" "   Then restart: ${GREEN}make dev${NC}"
+        fi
+        echo ""
+
+        conflict_num=$((conflict_num + 1))
+    done
+
+    # General help
+    print_status "${CYAN}" "${BOLD}ADDITIONAL HELP:${NC}"
+    echo ""
+    print_status "${NC}" "   • Documentation: ${GREEN}docs/CONFIGURATION.md${NC} (Port Configuration section)"
+    print_status "${NC}" "   • Check all listening ports: ${GREEN}lsof -i -P -n | grep LISTEN${NC}"
+    print_status "${NC}" "   • Stop all Docker containers: ${GREEN}docker stop \$(docker ps -aq)${NC}"
+    echo ""
+    print_status "${RED}" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
 # Check for port conflicts
 check_port_conflicts() {
     print_status "${BLUE}" "Checking for port conflicts..."
@@ -93,42 +272,82 @@ check_port_conflicts() {
 
     local ports=("${FRONTEND_PORT}" "${BACKEND_PORT}" "${DATABASE_PORT}" "${REDIS_PORT}")
     local port_names=("Frontend" "Backend" "PostgreSQL" "Redis")
-    local conflicts=0
+    local conflict_details=()
 
+    # Check each port for conflicts
     for i in "${!ports[@]}"; do
         local port="${ports[$i]}"
         local name="${port_names[$i]}"
 
-        # Check if port is in use (works on Linux and macOS)
-        if command -v netstat >/dev/null 2>&1; then
-            if netstat -tuln 2>/dev/null | grep -q ":${port} "; then
-                print_status "${YELLOW}" "⚠ Port ${port} (${name}) is already in use"
-                conflicts=$((conflicts + 1))
+        if check_port_in_use "${port}"; then
+            # Port is in use, get process information
+            local process_info=""
+
+            # Try lsof first (most reliable)
+            if command -v lsof >/dev/null 2>&1; then
+                process_info=$(get_process_info_lsof "${port}")
             fi
-        elif command -v ss >/dev/null 2>&1; then
-            if ss -tuln 2>/dev/null | grep -q ":${port} "; then
-                print_status "${YELLOW}" "⚠ Port ${port} (${name}) is already in use"
-                conflicts=$((conflicts + 1))
+
+            # Fall back to ss/netstat if lsof didn't work
+            if [ -z "${process_info}" ]; then
+                process_info=$(get_process_info_netstat "${port}")
             fi
+
+            # Parse process info or use defaults
+            if [ -n "${process_info}" ]; then
+                IFS='|' read -r pid process <<< "${process_info}"
+            else
+                pid="unknown"
+                process="unknown"
+            fi
+
+            # Store conflict details: service|port|pid|process
+            conflict_details+=("${name}|${port}|${pid}|${process}")
         fi
     done
 
-    if [ $conflicts -gt 0 ]; then
-        echo ""
-        print_status "${YELLOW}" "Warning: ${conflicts} port(s) are already in use."
-        print_status "${YELLOW}" "This may cause startup failures. You can:"
-        print_status "${YELLOW}" "  1. Stop existing services using these ports"
-        print_status "${YELLOW}" "  2. Change port numbers in .env file"
-        print_status "${YELLOW}" "  3. Continue anyway (may fail)"
-        echo ""
-        read -p "Continue with startup? (y/N): " -n 1 -r
-        echo ""
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            exit 0
-        fi
-    else
+    # If no conflicts, report success and return
+    if [ ${#conflict_details[@]} -eq 0 ]; then
         print_status "${GREEN}" "✓ No port conflicts detected"
+        return 0
     fi
+
+    # Display conflicts in formatted table
+    display_port_conflicts conflict_details
+
+    # Display solution suggestions
+    display_port_solutions conflict_details
+
+    # Ask user what to do
+    print_status "${YELLOW}" "Cannot continue with port conflicts."
+    print_status "${YELLOW}" "Please resolve the conflicts above and try again."
+    echo ""
+    read -p "Would you like to see detailed process information? (y/N): " -n 1 -r
+    echo ""
+
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo ""
+        print_status "${BLUE}" "Detailed port information:"
+        echo ""
+        for conflict in "${conflict_details[@]}"; do
+            IFS='|' read -r service port pid process <<< "${conflict}"
+            print_status "${CYAN}" "Port ${port} (${service}):"
+            if command -v lsof >/dev/null 2>&1; then
+                lsof -i ":${port}" 2>/dev/null || echo "  No detailed information available"
+            elif command -v ss >/dev/null 2>&1; then
+                ss -tlnp 2>/dev/null | grep ":${port}" || echo "  No detailed information available"
+            elif command -v netstat >/dev/null 2>&1; then
+                netstat -tlnp 2>/dev/null | grep ":${port}" || echo "  No detailed information available"
+            fi
+            echo ""
+        done
+    fi
+
+    echo ""
+    print_status "${RED}" "Startup aborted due to port conflicts."
+    print_status "${YELLOW}" "Fix the conflicts and run 'make dev' again."
+    echo ""
+    exit 1
 }
 
 # Validate and load profile configuration
