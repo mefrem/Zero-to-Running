@@ -6,6 +6,7 @@
 import * as dotenv from 'dotenv';
 import express, { Application, Request, Response, NextFunction } from 'express';
 import { logger } from './utils/logger';
+import { requestLoggingMiddleware, errorLoggingMiddleware } from './middleware/logging';
 import { testDatabaseConnection, closeDatabaseConnection } from './config/database';
 import { connectRedis, closeRedisConnection, testRedisConnection } from './config/redis';
 import healthRouter from './routes/health';
@@ -24,15 +25,8 @@ const app: Application = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging middleware
-app.use((req: Request, _res: Response, next: NextFunction) => {
-  logger.info('Incoming request', {
-    method: req.method,
-    path: req.path,
-    ip: req.ip,
-  });
-  next();
-});
+// Request logging middleware - generates requestId and logs all requests/responses
+app.use(requestLoggingMiddleware);
 
 // Register routes
 app.use(healthRouter);
@@ -45,49 +39,41 @@ app.use((_req: Request, res: Response) => {
   });
 });
 
-// Error handler
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  logger.error('Unhandled error', {
-    error: err.message,
-    stack: err.stack,
-  });
-
-  res.status(500).json({
-    error: 'Internal Server Error',
-    message: NODE_ENV === 'development' ? err.message : 'An unexpected error occurred',
-  });
-});
+// Error logging middleware
+app.use(errorLoggingMiddleware);
 
 /**
  * Initialize application connections and start server
  */
 async function startApplication(): Promise<void> {
   try {
-    logger.info('Starting application', {
+    logger.info({
+      msg: 'Starting application',
       environment: NODE_ENV,
       port: PORT,
       nodeVersion: process.version,
     });
 
     // Test database connection
-    logger.info('Connecting to database...');
+    logger.info({ msg: 'Connecting to database' });
     const dbConnected = await testDatabaseConnection();
     if (!dbConnected) {
-      logger.warn('Database connection failed, but continuing startup');
+      logger.warn({ msg: 'Database connection failed, but continuing startup' });
     }
 
     // Connect to Redis
-    logger.info('Connecting to Redis...');
+    logger.info({ msg: 'Connecting to Redis' });
     const redisConnected = await connectRedis();
     if (redisConnected) {
       await testRedisConnection();
     } else {
-      logger.warn('Redis connection failed, but continuing startup');
+      logger.warn({ msg: 'Redis connection failed, but continuing startup' });
     }
 
     // Start HTTP server
     const server = app.listen(PORT, () => {
-      logger.info('Application started successfully', {
+      logger.info({
+        msg: 'Application started successfully',
         port: PORT,
         environment: NODE_ENV,
         healthEndpoint: `http://localhost:${PORT}/health`,

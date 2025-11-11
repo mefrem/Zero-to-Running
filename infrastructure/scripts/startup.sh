@@ -2,6 +2,7 @@
 # Zero-to-Running Startup Script
 # Orchestrates Docker Compose service startup with health check validation
 # Story 1.6: Service Orchestration & Single Command Startup
+# Story 2.3: Startup Health Verification Automation
 
 set -euo pipefail
 
@@ -18,8 +19,9 @@ readonly BOLD='\033[1m'
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 readonly DOCKER_COMPOSE_FILE="${PROJECT_ROOT}/docker-compose.yml"
-readonly HEALTH_CHECK_TIMEOUT=60
-readonly HEALTH_CHECK_INTERVAL=2
+readonly HEALTH_CHECK_TIMEOUT=${HEALTH_CHECK_TIMEOUT:-120}  # 2 minutes (Story 2.3 AC1)
+readonly HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-2}  # 2 seconds between checks
+readonly SHOW_LOGS_ON_FAILURE=${SHOW_LOGS_ON_FAILURE:-false}
 
 # Service list in startup order
 readonly SERVICES=("postgres" "redis" "backend" "frontend")
@@ -168,7 +170,91 @@ start_services() {
     print_status "${GREEN}" "✓ Services started in detached mode"
 }
 
-# Get service health status
+# Check backend health via HTTP endpoint
+check_backend_health() {
+    # Load environment variables
+    local BACKEND_PORT=${BACKEND_PORT:-3001}
+
+    # Check if backend /health/ready endpoint is responding
+    local response=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${BACKEND_PORT}/health/ready" 2>/dev/null || echo "000")
+
+    if [ "${response}" = "200" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Check frontend health via HTTP endpoint
+check_frontend_health() {
+    # Load environment variables
+    local FRONTEND_PORT=${FRONTEND_PORT:-3000}
+
+    # Check if frontend is responding
+    local response=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${FRONTEND_PORT}/" 2>/dev/null || echo "000")
+
+    if [ "${response}" = "200" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Check Redis health via backend /health/ready endpoint
+check_redis_health() {
+    # Load environment variables
+    local BACKEND_PORT=${BACKEND_PORT:-3001}
+
+    # Check if backend reports Redis as healthy
+    local cache_status=$(curl -s "http://localhost:${BACKEND_PORT}/health/ready" 2>/dev/null | grep -o '"cache":"ok"' || echo "")
+
+    if [ -n "${cache_status}" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Display service status with progress indicator
+display_service_status() {
+    local service=$1
+    local status=$2
+
+    # Format: "Service:     Status"
+    printf "  %-12s %s\n" "${service}:" "${status}"
+}
+
+# Wait for service to become healthy with real-time progress
+wait_for_service_http() {
+    local service=$1
+    local check_function=$2
+    local elapsed=0
+    local last_status=""
+
+    while [ $elapsed -lt $HEALTH_CHECK_TIMEOUT ]; do
+        if $check_function; then
+            display_service_status "${service}" "${GREEN}Healthy ✓${NC}"
+            return 0
+        fi
+
+        # Update status display
+        local remaining=$((HEALTH_CHECK_TIMEOUT - elapsed))
+        local status="${YELLOW}Checking...${NC} (${remaining}s remaining)"
+
+        if [ "${status}" != "${last_status}" ]; then
+            display_service_status "${service}" "${status}"
+            last_status="${status}"
+        fi
+
+        sleep $HEALTH_CHECK_INTERVAL
+        elapsed=$((elapsed + HEALTH_CHECK_INTERVAL))
+    done
+
+    display_service_status "${service}" "${RED}Failed ✗${NC}"
+    return 1
+}
+
+# Get service health status (Docker health check)
 get_service_health() {
     local service=$1
     local container_name="${COMPOSE_PROJECT_NAME:-zero-to-running}-${service}"
@@ -179,79 +265,182 @@ get_service_health() {
     echo "${health_status}"
 }
 
-# Wait for service to become healthy
-wait_for_service() {
+# Wait for Docker container to be running
+wait_for_container() {
     local service=$1
     local container_name="${COMPOSE_PROJECT_NAME:-zero-to-running}-${service}"
     local elapsed=0
 
-    print_status "${CYAN}" "Waiting for ${service} to become healthy..."
+    while [ $elapsed -lt 30 ]; do
+        if docker ps --filter "name=${container_name}" --filter "status=running" | grep -q "${container_name}"; then
+            return 0
+        fi
 
-    while [ $elapsed -lt $HEALTH_CHECK_TIMEOUT ]; do
-        local health=$(get_service_health "${service}")
-
-        case "${health}" in
-            "healthy")
-                print_status "${GREEN}" "✓ ${service} is healthy"
-                return 0
-                ;;
-            "unhealthy")
-                print_status "${RED}" "✗ ${service} is unhealthy"
-                print_status "${YELLOW}" "Check logs: docker-compose logs ${service}"
-                return 1
-                ;;
-            "starting")
-                echo -n "."
-                ;;
-            "no-healthcheck")
-                # Service has no health check, just verify it's running
-                if docker ps --filter "name=${container_name}" --filter "status=running" | grep -q "${container_name}"; then
-                    print_status "${GREEN}" "✓ ${service} is running"
-                    return 0
-                fi
-                echo -n "."
-                ;;
-            "not-running")
-                print_status "${RED}" "✗ ${service} is not running"
-                return 1
-                ;;
-            *)
-                echo -n "."
-                ;;
-        esac
-
-        sleep $HEALTH_CHECK_INTERVAL
-        elapsed=$((elapsed + HEALTH_CHECK_INTERVAL))
+        sleep 1
+        elapsed=$((elapsed + 1))
     done
 
-    echo ""
-    print_status "${RED}" "✗ ${service} did not become healthy within ${HEALTH_CHECK_TIMEOUT} seconds"
-    print_status "${YELLOW}" "Check logs: docker-compose logs ${service}"
     return 1
+}
+
+# Perform database health verification
+verify_database_health() {
+    print_status "${BLUE}" "Verifying database health and schema initialization..."
+    echo ""
+
+    # Call database health check script
+    if bash "${SCRIPT_DIR}/check-db-health.sh" 5 5; then
+        echo ""
+        print_status "${GREEN}" "✓ Database health verification passed"
+        return 0
+    else
+        echo ""
+        print_status "${RED}" "✗ Database health verification failed"
+        print_status "${YELLOW}" "Troubleshooting suggestions:"
+        print_status "${YELLOW}" "  - Check database logs: docker-compose logs postgres"
+        print_status "${YELLOW}" "  - Verify DATABASE_PASSWORD in .env"
+        print_status "${YELLOW}" "  - Ensure database schema was initialized (check init.sql)"
+        print_status "${YELLOW}" "  - Try manual connection: docker exec -it zero-to-running-postgres psql -U postgres -d zero_to_running_dev"
+        echo ""
+        return 1
+    fi
+}
+
+# Offer to show logs for a failed service
+offer_logs_viewing() {
+    local service=$1
+
+    if [ "${SHOW_LOGS_ON_FAILURE}" = "true" ]; then
+        echo ""
+        print_status "${BLUE}" "Displaying logs for ${service}..."
+        echo ""
+        docker-compose -f "${DOCKER_COMPOSE_FILE}" logs --tail=50 "${service}"
+        return
+    fi
+
+    echo ""
+    read -p "View logs for ${service}? (y/N): " -n 1 -r
+    echo ""
+
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo ""
+        print_status "${BLUE}" "Displaying last 50 lines of logs for ${service}..."
+        echo ""
+        docker-compose -f "${DOCKER_COMPOSE_FILE}" logs --tail=50 "${service}"
+        echo ""
+    fi
+}
+
+# Display troubleshooting suggestions for a failed service
+display_troubleshooting() {
+    local service=$1
+    local reason=${2:-"unknown"}
+
+    echo ""
+    print_status "${YELLOW}" "Troubleshooting suggestions for ${service}:"
+
+    case "${service}" in
+        "Database")
+            print_status "${YELLOW}" "  - Check database logs: docker-compose logs postgres"
+            print_status "${YELLOW}" "  - Verify DATABASE_PASSWORD in .env file"
+            print_status "${YELLOW}" "  - Check if database port ${DATABASE_PORT:-5432} is available"
+            print_status "${YELLOW}" "  - Verify database schema was initialized (check init.sql)"
+            print_status "${YELLOW}" "  - Try manual connection: docker exec -it zero-to-running-postgres psql -U postgres"
+            ;;
+        "Backend")
+            print_status "${YELLOW}" "  - Check backend logs: docker-compose logs backend"
+            print_status "${YELLOW}" "  - Verify backend can connect to database and Redis"
+            print_status "${YELLOW}" "  - Check if backend port ${BACKEND_PORT:-3001} is available"
+            print_status "${YELLOW}" "  - Ensure .env variables are set correctly"
+            print_status "${YELLOW}" "  - Check backend health endpoint manually: curl http://localhost:${BACKEND_PORT:-3001}/health/ready"
+            ;;
+        "Frontend")
+            print_status "${YELLOW}" "  - Check frontend logs: docker-compose logs frontend"
+            print_status "${YELLOW}" "  - Verify frontend can reach backend API"
+            print_status "${YELLOW}" "  - Check if frontend port ${FRONTEND_PORT:-3000} is available"
+            print_status "${YELLOW}" "  - Ensure VITE_API_URL is set correctly in .env"
+            print_status "${YELLOW}" "  - Check for build errors in logs"
+            ;;
+        "Cache")
+            print_status "${YELLOW}" "  - Check Redis logs: docker-compose logs redis"
+            print_status "${YELLOW}" "  - Verify Redis port ${REDIS_PORT:-6379} is available"
+            print_status "${YELLOW}" "  - Check if backend can connect to Redis"
+            print_status "${YELLOW}" "  - Verify REDIS_URL in .env file"
+            ;;
+    esac
+
+    echo ""
+    print_status "${YELLOW}" "General troubleshooting:"
+    print_status "${YELLOW}" "  - Stop and restart: make down && make dev"
+    print_status "${YELLOW}" "  - Check Docker resources: docker system df"
+    print_status "${YELLOW}" "  - View all logs: docker-compose logs"
+    print_status "${YELLOW}" "  - Check container status: docker-compose ps"
 }
 
 # Wait for all services to become healthy
 wait_for_all_services() {
-    print_status "${BLUE}" "Waiting for services to become healthy..."
+    print_status "${BLUE}" "Verifying services are healthy..."
     echo ""
 
-    local failed=0
+    local failed_services=()
 
-    for service in "${SERVICES[@]}"; do
-        if ! wait_for_service "${service}"; then
-            failed=1
+    # Display initial status
+    display_service_status "Database" "${YELLOW}Starting...${NC}"
+    display_service_status "Backend" "${YELLOW}Starting...${NC}"
+    display_service_status "Cache" "${YELLOW}Starting...${NC}"
+    display_service_status "Frontend" "${YELLOW}Starting...${NC}"
+    echo ""
+
+    # Wait for containers to start
+    print_status "${BLUE}" "Waiting for containers to start..."
+    sleep 3
+
+    # Check Database
+    display_service_status "Database" "${YELLOW}Checking...${NC}"
+    if ! verify_database_health > /dev/null 2>&1; then
+        display_service_status "Database" "${RED}Failed ✗${NC}"
+        failed_services+=("postgres")
+        display_troubleshooting "Database"
+        offer_logs_viewing "postgres"
+    else
+        display_service_status "Database" "${GREEN}Healthy ✓${NC}"
+    fi
+
+    # Check Backend (includes Redis check)
+    if ! wait_for_service_http "Backend" check_backend_health; then
+        failed_services+=("backend")
+        display_troubleshooting "Backend"
+        offer_logs_viewing "backend"
+    fi
+
+    # Check Cache/Redis via backend endpoint
+    if [ ${#failed_services[@]} -eq 0 ] || [[ ! " ${failed_services[@]} " =~ " backend " ]]; then
+        display_service_status "Cache" "${YELLOW}Checking...${NC}"
+        if ! check_redis_health; then
+            display_service_status "Cache" "${RED}Failed ✗${NC}"
+            failed_services+=("redis")
+            display_troubleshooting "Cache"
+            offer_logs_viewing "redis"
+        else
+            display_service_status "Cache" "${GREEN}Healthy ✓${NC}"
         fi
-    done
+    fi
+
+    # Check Frontend
+    if ! wait_for_service_http "Frontend" check_frontend_health; then
+        failed_services+=("frontend")
+        display_troubleshooting "Frontend"
+        offer_logs_viewing "frontend"
+    fi
 
     echo ""
 
-    if [ $failed -eq 1 ]; then
-        print_status "${RED}" "✗ One or more services failed to start"
-        print_status "${YELLOW}" "Troubleshooting suggestions:"
-        print_status "${YELLOW}" "  - Check service logs: docker-compose logs [service-name]"
-        print_status "${YELLOW}" "  - Verify .env configuration"
-        print_status "${YELLOW}" "  - Ensure no port conflicts"
-        print_status "${YELLOW}" "  - Check Docker resources: docker system df"
+    if [ ${#failed_services[@]} -gt 0 ]; then
+        print_status "${RED}" "✗ Health verification failed for: ${failed_services[*]}"
+        echo ""
+        print_status "${YELLOW}" "For more help, see documentation:"
+        print_status "${YELLOW}" "  - README.md - Quick start guide"
+        print_status "${YELLOW}" "  - docs/HEALTH_VERIFICATION.md - Health check details (coming soon)"
         echo ""
         return 1
     fi
@@ -260,7 +449,7 @@ wait_for_all_services() {
     return 0
 }
 
-# Display service URLs
+# Display service URLs and connection strings (Story 2.3 AC3, AC6)
 display_service_info() {
     # Load environment variables
     set -a
@@ -270,30 +459,67 @@ display_service_info() {
     local FRONTEND_PORT=${FRONTEND_PORT:-3000}
     local BACKEND_PORT=${BACKEND_PORT:-3001}
     local DATABASE_PORT=${DATABASE_PORT:-5432}
+    local DATABASE_HOST=${DATABASE_HOST:-localhost}
+    local DATABASE_NAME=${DATABASE_NAME:-zero_to_running_dev}
+    local DATABASE_USER=${DATABASE_USER:-postgres}
+    local DATABASE_PASSWORD=${DATABASE_PASSWORD:-}
     local REDIS_PORT=${REDIS_PORT:-6379}
+    local REDIS_HOST=${REDIS_HOST:-localhost}
+    local REDIS_PASSWORD=${REDIS_PASSWORD:-}
 
     echo ""
-    echo -e "${CYAN}${BOLD}=====================================${NC}"
-    echo -e "${GREEN}${BOLD}All Services Running Successfully!${NC}"
-    echo -e "${CYAN}${BOLD}=====================================${NC}"
+    echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}${BOLD}SUCCESS! Environment ready for development.${NC}"
+    echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "${BOLD}Service URLs:${NC}"
-    echo -e "  ${CYAN}Frontend:${NC}    http://localhost:${FRONTEND_PORT}"
-    echo -e "  ${CYAN}Backend API:${NC} http://localhost:${BACKEND_PORT}"
-    echo -e "  ${CYAN}PostgreSQL:${NC}  localhost:${DATABASE_PORT}"
-    echo -e "  ${CYAN}Redis:${NC}       localhost:${REDIS_PORT}"
+    echo -e "${BOLD}Service Access:${NC}"
+    echo ""
+    echo -e "${CYAN}Frontend:${NC}   http://localhost:${FRONTEND_PORT}"
+    echo -e "${CYAN}Backend:${NC}    http://localhost:${BACKEND_PORT}"
+    echo ""
+    echo -e "${BOLD}Connection Strings:${NC}"
+    echo ""
+
+    # Database connection string (mask password if set)
+    if [ -n "${DATABASE_PASSWORD}" ]; then
+        echo -e "${CYAN}Database:${NC}   postgresql://${DATABASE_USER}:${DATABASE_PASSWORD}@${DATABASE_HOST}:${DATABASE_PORT}/${DATABASE_NAME}"
+    else
+        echo -e "${CYAN}Database:${NC}   postgresql://${DATABASE_USER}@${DATABASE_HOST}:${DATABASE_PORT}/${DATABASE_NAME}"
+    fi
+
+    # Redis connection string
+    if [ -n "${REDIS_PASSWORD}" ]; then
+        echo -e "${CYAN}Redis:${NC}      redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}"
+    else
+        echo -e "${CYAN}Redis:${NC}      redis://${REDIS_HOST}:${REDIS_PORT}"
+    fi
+
     echo ""
     echo -e "${BOLD}Useful Commands:${NC}"
-    echo -e "  ${CYAN}make down${NC}   - Stop all services"
-    echo -e "  ${CYAN}make logs${NC}   - View service logs (coming soon)"
-    echo -e "  ${CYAN}make status${NC} - Check service health (coming soon)"
     echo ""
-    echo -e "${GREEN}Happy coding! 🚀${NC}"
+    echo -e "  ${CYAN}make down${NC}    - Stop all services"
+    echo -e "  ${CYAN}make logs${NC}    - View service logs (coming soon)"
+    echo -e "  ${CYAN}make status${NC}  - Check service health (coming soon)"
     echo ""
+    echo -e "${GREEN}Press Ctrl+C to stop monitoring (services will continue running)${NC}"
+    echo ""
+}
+
+# Handle interrupt signal (Ctrl+C)
+handle_interrupt() {
+    echo ""
+    echo ""
+    print_status "${YELLOW}" "Interrupt received. Services will continue running in the background."
+    print_status "${YELLOW}" "To stop services: make down"
+    echo ""
+    exit 130
 }
 
 # Main execution
 main() {
+    # Set up interrupt handler
+    trap handle_interrupt SIGINT SIGTERM
+
     print_banner
 
     # Pre-flight checks
@@ -309,6 +535,10 @@ main() {
 
     # Wait for health checks
     if ! wait_for_all_services; then
+        echo ""
+        print_status "${RED}" "Startup failed. Services may be partially running."
+        print_status "${YELLOW}" "To clean up: make down"
+        echo ""
         exit 1
     fi
 

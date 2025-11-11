@@ -82,6 +82,13 @@ cp .env.example .env
 make dev
 ```
 
+The `make dev` command will:
+1. Start all Docker containers
+2. Verify each service is healthy (with 2-minute timeout)
+3. Display success message with access URLs and connection strings
+
+**Note**: The first run may take 3-8 minutes as Docker downloads images and builds containers. Subsequent runs take 15-30 seconds.
+
 The application will be available at:
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:3001
@@ -152,11 +159,231 @@ Run `make help` to see all available commands:
 
 ```bash
 make help      # Display all available commands
-make dev       # Start all services in development mode
+make dev       # Start all services in development mode with health verification
 make down      # Stop all running services
-make logs      # View logs from all services (coming soon)
-make status    # Check health status of all services (coming soon)
+make logs      # View logs from all services (filter by service, follow, or limit lines)
+make status    # Check health status and resource usage of all services
 ```
+
+### Health Verification
+
+The `make dev` command includes automatic health verification:
+
+- **Timeout**: 2 minutes for all services to become healthy
+- **Progress Indicators**: Real-time status updates for each service
+- **Success Message**: Displays all service URLs and connection strings when ready
+- **Error Handling**: Provides troubleshooting suggestions if services fail
+- **Log Viewing**: Offers to display logs for failed services
+
+**Customization** via environment variables:
+```bash
+# Increase timeout to 5 minutes (useful for slower machines)
+HEALTH_CHECK_TIMEOUT=300 make dev
+
+# Automatically show logs on failure (useful for CI/CD)
+SHOW_LOGS_ON_FAILURE=true make dev
+```
+
+For detailed health verification documentation, see [docs/HEALTH_VERIFICATION.md](docs/HEALTH_VERIFICATION.md).
+
+## Logging
+
+Zero-to-Running implements structured logging across all services for visibility and troubleshooting.
+
+### Viewing Logs
+
+```bash
+# View all service logs
+make logs
+
+# View logs for specific service
+make logs service=backend
+make logs service=frontend
+make logs service=postgres
+make logs service=redis
+
+# Follow logs in real-time
+make logs follow=true
+make logs service=backend follow=true
+
+# Customize number of lines
+make logs lines=200
+```
+
+### Log Configuration
+
+Configure logging behavior in your `.env` file:
+
+```bash
+# Backend log level: ERROR, WARN, INFO, DEBUG
+LOG_LEVEL=INFO
+
+# Backend log format: json (structured), pretty (human-readable)
+LOG_FORMAT=pretty
+
+# Frontend log level
+VITE_LOG_LEVEL=INFO
+
+# Number of log lines to display
+LOG_LINES=100
+```
+
+**Log Levels:**
+- **ERROR** - Critical errors only
+- **WARN** - Warnings and errors
+- **INFO** - General information (default)
+- **DEBUG** - Detailed debugging (includes database queries)
+
+### Structured Logging
+
+All backend logs are output in structured JSON format with fields:
+- `timestamp` - ISO 8601 timestamp
+- `level` - Log level (error, warn, info, debug)
+- `service` - Service name (backend, frontend, etc.)
+- `message` - Human-readable message
+- `requestId` - Unique identifier for request tracing
+
+Example log entry:
+```json
+{
+  "timestamp": "2025-11-10T14:30:45.123Z",
+  "level": "info",
+  "service": "backend",
+  "message": "Incoming request",
+  "requestId": "550e8400-e29b-41d4-a716-446655440000",
+  "method": "GET",
+  "path": "/api/users",
+  "statusCode": 200,
+  "responseTime": 125
+}
+```
+
+### Request Tracing
+
+Every API request is assigned a unique `requestId` that appears in all related logs. This enables tracing a request through the entire system.
+
+For comprehensive logging documentation, see [docs/LOGGING.md](docs/LOGGING.md).
+
+## Monitoring
+
+Zero-to-Running provides comprehensive monitoring tools to track service health, resource usage, and system status.
+
+### CLI Status Command
+
+Get a quick overview of all services with resource usage and port mappings:
+
+```bash
+# View service status
+make status
+```
+
+**Example output:**
+
+```
+Zero-to-Running Service Status
+
+Service      Status       Uptime       CPU      Memory     Ports
+--------     ------       ------       ---      ------     -----
+frontend     Healthy      5m 32s       0.5%     125MB      3000
+backend      Healthy      5m 35s       1.2%     180MB      3001
+postgres     Healthy      5m 40s       0.8%     95MB       5432
+redis        Healthy      5m 41s       0.3%     42MB       6379
+
+✓ All services are healthy
+```
+
+**Status Indicators:**
+- **Healthy** (Green) - Service running with health checks passing
+- **Unhealthy** (Red) - Service running but health checks failing
+- **Stopped** (Yellow) - Service not running
+- **Running** (Blue) - Service running (no health check configured)
+
+**Disable color output** (useful for scripting):
+```bash
+NO_COLOR=1 make status
+```
+
+### Web Dashboard
+
+Access the real-time monitoring dashboard for visual health status:
+
+**URL**: `http://localhost:3000/#dashboard`
+
+**Features:**
+- Real-time service health indicators for all 4 services
+- Auto-refresh every 10 seconds
+- Response time metrics (backend API latency)
+- Last check timestamp
+- Manual refresh button
+- Error state handling with troubleshooting tips
+- Color-coded status badges (Green=Healthy, Red=Unhealthy, Yellow=Checking)
+
+**Access the dashboard:**
+
+1. Start services: `make dev`
+2. Open browser to: `http://localhost:3000`
+3. Click **"View Full Monitoring Dashboard"** button
+
+OR navigate directly to: `http://localhost:3000/#dashboard`
+
+**Dashboard displays:**
+- Overall system status banner
+- Service health cards for Frontend, Backend, Database, and Redis
+- Response time in milliseconds
+- Timestamp of last health check
+- Troubleshooting tips and command reference
+
+### Health Check Endpoint
+
+The backend provides a comprehensive health endpoint for monitoring:
+
+**URL**: `http://localhost:3001/health/dashboard`
+
+**Response format:**
+```json
+{
+  "status": "ready",
+  "services": {
+    "backend": "ok",
+    "database": "ok",
+    "cache": "ok"
+  },
+  "timestamp": "2025-11-10T14:30:45.123Z",
+  "responseTime": 45
+}
+```
+
+**Status values:**
+- `ready` - All services healthy
+- `degraded` - One or more services unhealthy
+
+**Service status values:**
+- `ok` - Service healthy and responding
+- `error` - Service unhealthy or unreachable
+
+### Monitoring Tips
+
+**Check status before debugging:**
+```bash
+# Quick health check
+make status
+
+# If services are unhealthy, view logs
+make logs service=<service-name>
+```
+
+**Monitor during development:**
+- Keep the web dashboard open while developing
+- Auto-refresh provides real-time status updates
+- Response time helps identify performance issues
+
+**Troubleshooting unhealthy services:**
+1. Run `make status` to identify which service is unhealthy
+2. Run `make logs service=<name>` to view error messages
+3. Check network connectivity: `docker network inspect zero-to-running-network`
+4. Restart services: `make dev`
+
+For comprehensive monitoring documentation, see [docs/MONITORING.md](docs/MONITORING.md).
 
 ## Database Setup
 
