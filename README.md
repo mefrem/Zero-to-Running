@@ -1085,7 +1085,11 @@ For detailed cache documentation and troubleshooting, see [infrastructure/cache/
 
 ## Troubleshooting
 
-### Services won't start
+For comprehensive troubleshooting guidance, common issues, debugging commands, and service-specific debugging guides, see the **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)**.
+
+### Quick Solutions for Common Issues
+
+#### Services won't start
 
 **Issue**: `make dev` fails or services don't start
 
@@ -1144,6 +1148,10 @@ For detailed cache documentation and troubleshooting, see [infrastructure/cache/
 - **macOS**: Install via Xcode Command Line Tools: `xcode-select --install`
 - **Linux**: Install via package manager: `sudo apt-get install build-essential` (Debian/Ubuntu)
 - **Windows**: Use WSL2 (Windows Subsystem for Linux)
+
+---
+
+**For more troubleshooting help**, including detailed debugging guides, FAQ, and escalation procedures, see the **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)**
 
 ## Contributing
 
