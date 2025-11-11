@@ -95,6 +95,73 @@ The application will be available at:
 - PostgreSQL: localhost:5432
 - Redis: localhost:6379
 
+## Development Profiles
+
+Zero-to-Running supports multiple development profiles to optimize your workflow based on the type of work you're doing.
+
+### Available Profiles
+
+**Minimal Profile** - Backend + Database Only
+- Faster startup (~30-45 seconds)
+- Lower resource usage
+- Ideal for API development and backend work
+
+```bash
+make dev profile=minimal
+```
+
+**Full Profile** - All Services (Default)
+- Complete development environment
+- All services running (frontend, backend, database, Redis)
+- Best for full-stack development
+
+```bash
+make dev profile=full
+# OR simply:
+make dev
+```
+
+### Profile Commands
+
+```bash
+# List all available profiles
+make profiles
+
+# Start with specific profile
+make dev profile=minimal
+make dev profile=full
+
+# Switch profiles (stop current, start new)
+make down && make dev profile=minimal
+```
+
+### Profile Comparison
+
+| Feature | Minimal | Full |
+|---------|---------|------|
+| PostgreSQL | ✓ | ✓ |
+| Backend API | ✓ | ✓ |
+| Frontend | ✗ | ✓ |
+| Redis | ✗ | ✓ |
+| Startup Time | 30-45s | 60-90s |
+| Memory | 400-600 MB | 1-1.5 GB |
+
+### When to Use Each Profile
+
+**Use Minimal Profile When:**
+- Working on backend API endpoints
+- Developing database schema changes
+- Testing backend services independently
+- You need fast iteration and lower resource usage
+
+**Use Full Profile When:**
+- Developing full-stack features
+- Testing integration between all services
+- Working on frontend components
+- Running end-to-end tests
+
+For detailed profile documentation, see [docs/PROFILES.md](docs/PROFILES.md).
+
 ## Configuration
 
 Zero-to-Running uses environment variables for all configuration, making it easy to customize your local development environment.

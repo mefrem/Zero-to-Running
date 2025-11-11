@@ -3,6 +3,7 @@
 # Orchestrates Docker Compose service startup with health check validation
 # Story 1.6: Service Orchestration & Single Command Startup
 # Story 2.3: Startup Health Verification Automation
+# Story 3.3: Multi-Profile Environment Support
 
 set -euo pipefail
 
@@ -23,14 +24,19 @@ readonly HEALTH_CHECK_TIMEOUT=${HEALTH_CHECK_TIMEOUT:-120}  # 2 minutes (Story 2
 readonly HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-2}  # 2 seconds between checks
 readonly SHOW_LOGS_ON_FAILURE=${SHOW_LOGS_ON_FAILURE:-false}
 
-# Service list in startup order
-readonly SERVICES=("postgres" "redis" "backend" "frontend")
+# Profile configuration (Story 3.3)
+PROFILE="${1:-full}"  # Default to full profile if not specified
+
+# Service list in startup order (will be filtered based on profile)
+readonly ALL_SERVICES=("postgres" "redis" "backend" "frontend")
 
 # Display banner
 print_banner() {
     echo ""
     echo -e "${CYAN}${BOLD}=====================================${NC}"
     echo -e "${CYAN}${BOLD}  Zero-to-Running Development${NC}"
+    echo -e "${CYAN}${BOLD}=====================================${NC}"
+    echo -e "${BLUE}  Profile: ${BOLD}${PROFILE}${NC}"
     echo -e "${CYAN}${BOLD}=====================================${NC}"
     echo ""
 }
@@ -125,22 +131,58 @@ check_port_conflicts() {
     fi
 }
 
+# Validate and load profile configuration
+validate_and_load_profile() {
+    print_status "${BLUE}" "Validating profile: ${PROFILE}..."
+
+    # Validate profile using validation script
+    if ! bash "${SCRIPT_DIR}/validate-profile.sh" "${PROFILE}" > /dev/null 2>&1; then
+        echo ""
+        print_status "${RED}" "Profile validation failed"
+        bash "${SCRIPT_DIR}/validate-profile.sh" "${PROFILE}"
+        exit 1
+    fi
+
+    print_status "${GREEN}" "✓ Profile '${PROFILE}' is valid"
+
+    # Load profile-specific environment file
+    local profile_env="${PROJECT_ROOT}/.env.${PROFILE}"
+
+    if [ -f "${profile_env}" ]; then
+        print_status "${BLUE}" "Loading profile configuration from .env.${PROFILE}..."
+
+        # Copy profile to .env (with backup)
+        if [ -f "${PROJECT_ROOT}/.env" ] && [ ! -f "${PROJECT_ROOT}/.env.backup" ]; then
+            cp "${PROJECT_ROOT}/.env" "${PROJECT_ROOT}/.env.backup"
+        fi
+
+        cp "${profile_env}" "${PROJECT_ROOT}/.env"
+        print_status "${GREEN}" "✓ Profile configuration loaded"
+    else
+        error_exit "Profile configuration file not found: ${profile_env}"
+    fi
+}
+
 # Check for .env file
 check_env_file() {
     print_status "${BLUE}" "Checking environment configuration..."
 
-    if [ ! -f "${PROJECT_ROOT}/.env" ]; then
-        print_status "${YELLOW}" "⚠ .env file not found"
+    # If no .env exists and no .env.{profile} exists, copy from .env.example
+    if [ ! -f "${PROJECT_ROOT}/.env" ] && [ ! -f "${PROJECT_ROOT}/.env.${PROFILE}" ]; then
+        print_status "${YELLOW}" "⚠ No environment configuration found"
 
         if [ -f "${PROJECT_ROOT}/.env.example" ]; then
-            print_status "${YELLOW}" "Copying .env.example to .env..."
-            cp "${PROJECT_ROOT}/.env.example" "${PROJECT_ROOT}/.env"
-            print_status "${YELLOW}" "Please edit .env and set DATABASE_PASSWORD before running again"
+            print_status "${YELLOW}" "Copying .env.example to .env.${PROFILE}..."
+            cp "${PROJECT_ROOT}/.env.example" "${PROJECT_ROOT}/.env.${PROFILE}"
+            print_status "${YELLOW}" "Please edit .env.${PROFILE} and set DATABASE_PASSWORD before running again"
             exit 1
         else
             error_exit ".env file not found and .env.example does not exist"
         fi
     fi
+
+    # Validate and load profile configuration
+    validate_and_load_profile
 
     # Run comprehensive configuration validation
     echo ""
@@ -151,20 +193,43 @@ check_env_file() {
     print_status "${GREEN}" "✓ Environment configuration valid"
 }
 
+# Get services for current profile
+get_profile_services() {
+    case "${PROFILE}" in
+        minimal)
+            echo "postgres backend"
+            ;;
+        full)
+            echo "postgres redis backend frontend"
+            ;;
+        *)
+            echo "postgres redis backend frontend"
+            ;;
+    esac
+}
+
 # Start Docker Compose services
 start_services() {
-    print_status "${BLUE}" "Starting Docker Compose services..."
+    print_status "${BLUE}" "Starting Docker Compose services for '${PROFILE}' profile..."
+    echo ""
+
+    # Display which services will be started
+    local services=$(get_profile_services)
+    print_status "${CYAN}" "Services to start: ${services}"
     echo ""
 
     cd "${PROJECT_ROOT}"
 
-    # Start services in detached mode
-    if ! docker-compose -f "${DOCKER_COMPOSE_FILE}" up -d 2>&1; then
+    # Set COMPOSE_PROFILES environment variable for docker-compose
+    export COMPOSE_PROFILES="${PROFILE}"
+
+    # Start services in detached mode with profile
+    if ! docker-compose -f "${DOCKER_COMPOSE_FILE}" --profile "${PROFILE}" up -d 2>&1; then
         error_exit "Failed to start Docker Compose services. Check docker-compose logs for details."
     fi
 
     echo ""
-    print_status "${GREEN}" "✓ Services started in detached mode"
+    print_status "${GREEN}" "✓ Services started in detached mode (profile: ${PROFILE})"
 }
 
 # Check backend health via HTTP endpoint
@@ -374,25 +439,48 @@ display_troubleshooting() {
     print_status "${YELLOW}" "  - Check container status: docker-compose ps"
 }
 
-# Wait for all services to become healthy
+# Check if service is in current profile
+is_service_in_profile() {
+    local service=$1
+    local profile_services=$(get_profile_services)
+
+    if [[ " ${profile_services} " =~ " ${service} " ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Wait for all services to become healthy (profile-aware)
 wait_for_all_services() {
-    print_status "${BLUE}" "Verifying services are healthy..."
+    print_status "${BLUE}" "Verifying services are healthy (profile: ${PROFILE})..."
     echo ""
 
     local failed_services=()
 
-    # Display initial status
+    # Display initial status based on profile
     display_service_status "Database" "${YELLOW}Starting...${NC}"
     display_service_status "Backend" "${YELLOW}Starting...${NC}"
-    display_service_status "Cache" "${YELLOW}Starting...${NC}"
-    display_service_status "Frontend" "${YELLOW}Starting...${NC}"
+
+    if is_service_in_profile "redis"; then
+        display_service_status "Cache" "${YELLOW}Starting...${NC}"
+    else
+        display_service_status "Cache" "${BLUE}Skipped (not in profile)${NC}"
+    fi
+
+    if is_service_in_profile "frontend"; then
+        display_service_status "Frontend" "${YELLOW}Starting...${NC}"
+    else
+        display_service_status "Frontend" "${BLUE}Skipped (not in profile)${NC}"
+    fi
+
     echo ""
 
     # Wait for containers to start
     print_status "${BLUE}" "Waiting for containers to start..."
     sleep 3
 
-    # Check Database
+    # Check Database (always included)
     display_service_status "Database" "${YELLOW}Checking...${NC}"
     if ! verify_database_health > /dev/null 2>&1; then
         display_service_status "Database" "${RED}Failed ✗${NC}"
@@ -403,31 +491,35 @@ wait_for_all_services() {
         display_service_status "Database" "${GREEN}Healthy ✓${NC}"
     fi
 
-    # Check Backend (includes Redis check)
+    # Check Backend (always included)
     if ! wait_for_service_http "Backend" check_backend_health; then
         failed_services+=("backend")
         display_troubleshooting "Backend"
         offer_logs_viewing "backend"
     fi
 
-    # Check Cache/Redis via backend endpoint
-    if [ ${#failed_services[@]} -eq 0 ] || [[ ! " ${failed_services[@]} " =~ " backend " ]]; then
-        display_service_status "Cache" "${YELLOW}Checking...${NC}"
-        if ! check_redis_health; then
-            display_service_status "Cache" "${RED}Failed ✗${NC}"
-            failed_services+=("redis")
-            display_troubleshooting "Cache"
-            offer_logs_viewing "redis"
-        else
-            display_service_status "Cache" "${GREEN}Healthy ✓${NC}"
+    # Check Cache/Redis (only if in profile)
+    if is_service_in_profile "redis"; then
+        if [ ${#failed_services[@]} -eq 0 ] || [[ ! " ${failed_services[@]} " =~ " backend " ]]; then
+            display_service_status "Cache" "${YELLOW}Checking...${NC}"
+            if ! check_redis_health; then
+                display_service_status "Cache" "${RED}Failed ✗${NC}"
+                failed_services+=("redis")
+                display_troubleshooting "Cache"
+                offer_logs_viewing "redis"
+            else
+                display_service_status "Cache" "${GREEN}Healthy ✓${NC}"
+            fi
         fi
     fi
 
-    # Check Frontend
-    if ! wait_for_service_http "Frontend" check_frontend_health; then
-        failed_services+=("frontend")
-        display_troubleshooting "Frontend"
-        offer_logs_viewing "frontend"
+    # Check Frontend (only if in profile)
+    if is_service_in_profile "frontend"; then
+        if ! wait_for_service_http "Frontend" check_frontend_health; then
+            failed_services+=("frontend")
+            display_troubleshooting "Frontend"
+            offer_logs_viewing "frontend"
+        fi
     fi
 
     echo ""
@@ -437,12 +529,12 @@ wait_for_all_services() {
         echo ""
         print_status "${YELLOW}" "For more help, see documentation:"
         print_status "${YELLOW}" "  - README.md - Quick start guide"
-        print_status "${YELLOW}" "  - docs/HEALTH_VERIFICATION.md - Health check details (coming soon)"
+        print_status "${YELLOW}" "  - docs/PROFILES.md - Profile documentation"
         echo ""
         return 1
     fi
 
-    print_status "${GREEN}" "✓ All services are healthy"
+    print_status "${GREEN}" "✓ All services in profile are healthy"
     return 0
 }
 
@@ -467,11 +559,18 @@ display_service_info() {
     echo ""
     echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${GREEN}${BOLD}SUCCESS! Environment ready for development.${NC}"
+    echo -e "${GREEN}${BOLD}Profile: ${PROFILE}${NC}"
     echo -e "${GREEN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     echo -e "${BOLD}Service Access:${NC}"
     echo ""
-    echo -e "${CYAN}Frontend:${NC}   http://localhost:${FRONTEND_PORT}"
+
+    if is_service_in_profile "frontend"; then
+        echo -e "${CYAN}Frontend:${NC}   http://localhost:${FRONTEND_PORT}"
+    else
+        echo -e "${CYAN}Frontend:${NC}   ${BLUE}Not started (not in ${PROFILE} profile)${NC}"
+    fi
+
     echo -e "${CYAN}Backend:${NC}    http://localhost:${BACKEND_PORT}"
     echo ""
     echo -e "${BOLD}Connection Strings:${NC}"
@@ -485,18 +584,28 @@ display_service_info() {
     fi
 
     # Redis connection string
-    if [ -n "${REDIS_PASSWORD}" ]; then
-        echo -e "${CYAN}Redis:${NC}      redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}"
+    if is_service_in_profile "redis"; then
+        if [ -n "${REDIS_PASSWORD}" ]; then
+            echo -e "${CYAN}Redis:${NC}      redis://:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}"
+        else
+            echo -e "${CYAN}Redis:${NC}      redis://${REDIS_HOST}:${REDIS_PORT}"
+        fi
     else
-        echo -e "${CYAN}Redis:${NC}      redis://${REDIS_HOST}:${REDIS_PORT}"
+        echo -e "${CYAN}Redis:${NC}      ${BLUE}Not started (not in ${PROFILE} profile)${NC}"
     fi
 
+    echo ""
+    echo -e "${BOLD}Profile Commands:${NC}"
+    echo ""
+    echo -e "  ${CYAN}make profiles${NC}              - List all available profiles"
+    echo -e "  ${CYAN}make dev profile=minimal${NC}   - Switch to minimal profile"
+    echo -e "  ${CYAN}make dev profile=full${NC}      - Switch to full profile"
     echo ""
     echo -e "${BOLD}Useful Commands:${NC}"
     echo ""
     echo -e "  ${CYAN}make down${NC}    - Stop all services"
-    echo -e "  ${CYAN}make logs${NC}    - View service logs (coming soon)"
-    echo -e "  ${CYAN}make status${NC}  - Check service health (coming soon)"
+    echo -e "  ${CYAN}make logs${NC}    - View service logs"
+    echo -e "  ${CYAN}make status${NC}  - Check service health"
     echo ""
     echo -e "${GREEN}Press Ctrl+C to stop monitoring (services will continue running)${NC}"
     echo ""

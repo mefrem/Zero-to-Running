@@ -3,7 +3,7 @@
 # Compatible with macOS, Linux, and Windows (via WSL2)
 
 # PHONY targets are not associated with files
-.PHONY: help dev down logs status seed reset-db config clean
+.PHONY: help dev down logs status seed reset-db config clean profiles
 
 # Default target when 'make' is run without arguments
 .DEFAULT_GOAL := help
@@ -19,13 +19,17 @@ help: ## Display this help message with all available commands
 	@echo ""
 	@awk 'BEGIN {FS = ":.*##"; printf ""} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 	@echo ""
-	@echo "Example: make dev"
+	@echo "Examples:"
+	@echo "  make dev                    # Start all services (full profile)"
+	@echo "  make dev profile=minimal    # Start only backend + database"
+	@echo "  make dev profile=full       # Start all services"
+	@echo "  make profiles               # List available profiles"
 	@echo ""
 
 ##@ Development
 
-dev: ## Start all services in development mode
-	@bash infrastructure/scripts/startup.sh
+dev: ## Start services in development mode (use profile=minimal or profile=full)
+	@bash infrastructure/scripts/startup.sh $(profile)
 
 down: ## Stop all running services
 	@echo "====================================="
@@ -60,8 +64,11 @@ reset-db: ## Reset and reseed database (Coming in Story 3.5)
 
 ##@ Configuration
 
-config: ## Validate environment configuration
-	@bash infrastructure/scripts/validate-config.sh
+config: ## Validate environment configuration (use profile=<name> to validate specific profile)
+	@bash infrastructure/scripts/validate-config.sh $(profile)
+
+profiles: ## List all available profiles and their descriptions
+	@bash infrastructure/scripts/validate-profile.sh --list
 
 ##@ Cleanup
 
