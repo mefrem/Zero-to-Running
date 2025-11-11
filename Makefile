@@ -60,9 +60,8 @@ reset-db: ## Reset and reseed database (Coming in Story 3.5)
 
 ##@ Configuration
 
-config: ## Validate environment configuration (Coming in Story 3.1)
-	@echo "Config command will be implemented in Story 3.1"
-	@echo "Will validate .env file and check for missing required variables"
+config: ## Validate environment configuration
+	@bash infrastructure/scripts/validate-config.sh
 
 ##@ Cleanup
 

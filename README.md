@@ -95,6 +95,135 @@ The application will be available at:
 - PostgreSQL: localhost:5432
 - Redis: localhost:6379
 
+## Configuration
+
+Zero-to-Running uses environment variables for all configuration, making it easy to customize your local development environment.
+
+### Setting Up Your Environment
+
+1. **Copy the example configuration:**
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Required Variables:**
+   Edit `.env` and set these required variables:
+   ```bash
+   DATABASE_PASSWORD=your_secure_password_here
+   SESSION_SECRET=your_random_session_secret_here
+   ```
+
+3. **Validate Your Configuration:**
+   ```bash
+   make config
+   ```
+
+This will check that:
+- All required variables are set
+- Port numbers are valid and not duplicated
+- Passwords and secrets are not using default values
+- Log levels and formats are correct
+
+### Key Configuration Options
+
+**Service Ports:**
+```bash
+FRONTEND_PORT=3000       # React application
+BACKEND_PORT=3001        # API server
+DATABASE_PORT=5432       # PostgreSQL
+REDIS_PORT=6379          # Redis cache
+```
+
+**Logging:**
+```bash
+LOG_LEVEL=INFO          # ERROR, WARN, INFO, DEBUG
+LOG_FORMAT=pretty       # pretty (dev) or json (production)
+VITE_LOG_LEVEL=INFO     # Frontend log level
+```
+
+**Database:**
+```bash
+DATABASE_HOST=localhost
+DATABASE_NAME=zero_to_running_dev
+DATABASE_USER=postgres
+DATABASE_PASSWORD=CHANGE_ME_secure_password_123
+```
+
+**Security:**
+```bash
+SESSION_SECRET=CHANGE_ME_random_session_secret_key_xyz789
+JWT_SECRET=CHANGE_ME_jwt_secret_key_abc456  # Optional, for JWT auth
+```
+
+### Configuration Commands
+
+```bash
+# Validate configuration before starting
+make config
+
+# Start services (automatically validates config)
+make dev
+```
+
+### Common Configuration Scenarios
+
+**Change Service Ports:**
+```bash
+# In .env file
+FRONTEND_PORT=4000
+BACKEND_PORT=5000
+
+# Verify changes
+make config
+
+# Restart services
+make down && make dev
+```
+
+**Enable Debug Logging:**
+```bash
+# In .env file
+LOG_LEVEL=DEBUG
+VITE_LOG_LEVEL=DEBUG
+
+# Restart to apply
+make down && make dev
+```
+
+**Use Different Database Credentials:**
+```bash
+# In .env file
+DATABASE_USER=myuser
+DATABASE_PASSWORD=mypassword
+DATABASE_NAME=mydb
+
+# Restart to apply
+make down && make dev
+```
+
+### Troubleshooting Configuration
+
+**Common Issues:**
+
+1. **"DATABASE_PASSWORD is not set"**
+   - Edit `.env` and set `DATABASE_PASSWORD` to a secure value
+   - Run `make config` to verify
+
+2. **"Duplicate port assignments"**
+   - Check that all service ports are unique in `.env`
+   - Use `make config` to identify conflicts
+
+3. **"Invalid LOG_LEVEL"**
+   - Must be one of: ERROR, WARN, INFO, DEBUG
+   - Check for typos in `.env`
+
+4. **Configuration validation fails on startup**
+   - Run `make config` to see detailed error messages
+   - Fix errors in `.env` file
+   - Restart with `make dev`
+
+For comprehensive configuration documentation, see [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+
 ## Repository Structure
 
 This monorepo is organized to separate concerns while keeping everything in one place:

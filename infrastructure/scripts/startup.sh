@@ -142,13 +142,10 @@ check_env_file() {
         fi
     fi
 
-    # Check for required DATABASE_PASSWORD
-    set -a
-    source "${PROJECT_ROOT}/.env"
-    set +a
-
-    if [ -z "${DATABASE_PASSWORD:-}" ]; then
-        error_exit "DATABASE_PASSWORD is not set in .env file. Please set it and try again."
+    # Run comprehensive configuration validation
+    echo ""
+    if ! bash "${SCRIPT_DIR}/validate-config.sh"; then
+        error_exit "Configuration validation failed. Please fix the errors above and try again."
     fi
 
     print_status "${GREEN}" "✓ Environment configuration valid"
