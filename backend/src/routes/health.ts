@@ -63,11 +63,11 @@ router.get('/health/ready', async (_req: Request, res: Response): Promise<void> 
     if (dbResult.status === 'rejected') {
       databaseStatus = 'error';
       errors.database = dbResult.reason?.message || 'Database check failed';
-      logger.error('Database health check failed', { error: dbResult.reason });
+      logger.error({ error: dbResult.reason }, 'Database health check failed');
     } else if (!dbResult.value) {
       databaseStatus = 'error';
       errors.database = 'Database connection test returned false';
-      logger.error('Database health check returned false');
+      logger.error({}, 'Database health check returned false');
     }
 
     // Check Redis result
@@ -75,15 +75,15 @@ router.get('/health/ready', async (_req: Request, res: Response): Promise<void> 
     if (redisResult.status === 'rejected') {
       cacheStatus = 'error';
       errors.cache = redisResult.reason?.message || 'Cache check failed';
-      logger.error('Redis health check failed', { error: redisResult.reason });
+      logger.error({ error: redisResult.reason }, 'Redis health check failed');
     } else if (!redisResult.value) {
       cacheStatus = 'error';
       errors.cache = 'Redis connection test returned false';
-      logger.error('Redis health check returned false');
+      logger.error({}, 'Redis health check returned false');
     }
   } catch (error) {
     // Timeout occurred
-    logger.error('Health check timeout exceeded', { error });
+    logger.error({ error }, 'Health check timeout exceeded');
     res.status(503).json({
       status: 'unavailable',
       timestamp,
@@ -119,11 +119,11 @@ router.get('/health/ready', async (_req: Request, res: Response): Promise<void> 
     response.errors = errors;
   }
 
-  logger.info('Health check completed', {
+  logger.info({
     status,
     database: databaseStatus,
     cache: cacheStatus,
-  });
+  }, 'Health check completed');
 
   res.status(statusCode).json(response);
   return;
@@ -157,11 +157,11 @@ router.get('/health/dashboard', async (_req: Request, res: Response): Promise<vo
     if (dbResult.status === 'rejected') {
       databaseStatus = 'error';
       errors.database = dbResult.reason?.message || 'Database check failed';
-      logger.debug('Database health check failed for dashboard', { error: dbResult.reason });
+      logger.debug({ error: dbResult.reason }, 'Database health check failed for dashboard');
     } else if (!dbResult.value) {
       databaseStatus = 'error';
       errors.database = 'Database connection test returned false';
-      logger.debug('Database health check returned false for dashboard');
+      logger.debug({}, 'Database health check returned false for dashboard');
     }
 
     // Check Redis result
@@ -169,15 +169,15 @@ router.get('/health/dashboard', async (_req: Request, res: Response): Promise<vo
     if (redisResult.status === 'rejected') {
       cacheStatus = 'error';
       errors.cache = redisResult.reason?.message || 'Cache check failed';
-      logger.debug('Redis health check failed for dashboard', { error: redisResult.reason });
+      logger.debug({ error: redisResult.reason }, 'Redis health check failed for dashboard');
     } else if (!redisResult.value) {
       cacheStatus = 'error';
       errors.cache = 'Redis connection test returned false';
-      logger.debug('Redis health check returned false for dashboard');
+      logger.debug({}, 'Redis health check returned false for dashboard');
     }
   } catch (error) {
     // Timeout occurred
-    logger.warn('Dashboard health check timeout exceeded', { error });
+    logger.warn({ error }, 'Dashboard health check timeout exceeded');
     databaseStatus = 'error';
     cacheStatus = 'error';
     errors.timeout = 'Health check exceeded 1 second timeout';
@@ -218,11 +218,11 @@ router.get('/health/dashboard', async (_req: Request, res: Response): Promise<vo
     response.errors = errors;
   }
 
-  logger.debug('Dashboard health check completed', {
+  logger.debug({
     status,
     services: response.services,
     responseTime,
-  });
+  }, 'Dashboard health check completed');
 
   // Always return 200 for dashboard endpoint so frontend can display degraded state
   res.status(200).json(response);

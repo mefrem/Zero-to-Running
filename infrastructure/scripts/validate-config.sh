@@ -42,25 +42,25 @@ print_color() {
 # Add error message
 add_error() {
   ERRORS+=("$1")
-  ((ERROR_COUNT++))
+  ((ERROR_COUNT++)) || true
 }
 
 # Add warning message
 add_warning() {
   WARNINGS+=("$1")
-  ((WARNING_COUNT++))
+  ((WARNING_COUNT++)) || true
 }
 
 # Check if variable is set in .env
 is_set() {
   local var_name=$1
-  grep -q "^${var_name}=" "$ENV_FILE" 2>/dev/null
+  grep -q "^${var_name}=" "$ENV_FILE" 2>/dev/null || return 1
 }
 
 # Get variable value from .env
 get_value() {
   local var_name=$1
-  grep "^${var_name}=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d '=' -f2- | sed 's/^"//;s/"$//' | tr -d '\n\r'
+  grep "^${var_name}=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d '=' -f2- | sed 's/^"//;s/"$//' | tr -d '\n\r' || true
 }
 
 # Validate port number
@@ -244,29 +244,37 @@ done
 # Validate ports
 print_color "$BLUE" "Validating port numbers..."
 
-declare -A ports
-ports["FRONTEND_PORT"]=$(get_value "FRONTEND_PORT")
-ports["BACKEND_PORT"]=$(get_value "BACKEND_PORT")
-ports["DATABASE_PORT"]=$(get_value "DATABASE_PORT")
-ports["REDIS_PORT"]=$(get_value "REDIS_PORT")
-
-# Validate each port
-for port_name in "${!ports[@]}"; do
-  port_value="${ports[$port_name]}"
+# Use simple array instead of associative array for bash 3.2 compatibility
+port_names=("FRONTEND_PORT" "BACKEND_PORT" "DATABASE_PORT" "REDIS_PORT")
+for port_name in "${port_names[@]}"; do
+  port_value=$(get_value "$port_name")
   if [ -n "$port_value" ]; then
     validate_port "$port_name" "$port_value"
   fi
 done
 
 # Check for duplicate ports
-declare -A port_counts
-for port_name in "${!ports[@]}"; do
-  port_value="${ports[$port_name]}"
+# Use simple list instead of associative array for bash 3.2 compatibility
+seen_ports=""
+seen_port_names=""
+for port_name in "${port_names[@]}"; do
+  port_value=$(get_value "$port_name")
   if [ -n "$port_value" ]; then
-    if [ -n "${port_counts[$port_value]}" ]; then
-      add_error "Duplicate port $port_value used by $port_name and ${port_counts[$port_value]}"
+    # Check if this port has been seen before
+    if echo "$seen_ports" | grep -q "\\b$port_value\\b"; then
+      # Find which service had this port first
+      idx=1
+      for seen_port in $seen_ports; do
+        if [ "$seen_port" = "$port_value" ]; then
+          first_service=$(echo "$seen_port_names" | cut -d' ' -f$idx)
+          add_error "Duplicate port $port_value used by $port_name and $first_service"
+          break
+        fi
+        idx=$((idx + 1))
+      done
     else
-      port_counts[$port_value]=$port_name
+      seen_ports="$seen_ports $port_value"
+      seen_port_names="$seen_port_names $port_name"
     fi
   fi
 done
@@ -403,10 +411,10 @@ if [ $ERROR_COUNT -eq 0 ] && [ $WARNING_COUNT -eq 0 ]; then
   print_color "$GREEN" "✓ Configuration is valid!"
   echo ""
   print_color "$GREEN" "Summary:"
-  print_color "$GREEN" "  • Frontend Port: ${ports[FRONTEND_PORT]:-3000 (default)}"
-  print_color "$GREEN" "  • Backend Port: ${ports[BACKEND_PORT]:-3001 (default)}"
-  print_color "$GREEN" "  • Database Port: ${ports[DATABASE_PORT]:-5432 (default)}"
-  print_color "$GREEN" "  • Redis Port: ${ports[REDIS_PORT]:-6379 (default)}"
+  print_color "$GREEN" "  • Frontend Port: $(get_value FRONTEND_PORT || echo '3000 (default)')"
+  print_color "$GREEN" "  • Backend Port: $(get_value BACKEND_PORT || echo '3001 (default)')"
+  print_color "$GREEN" "  • Database Port: $(get_value DATABASE_PORT || echo '5432 (default)')"
+  print_color "$GREEN" "  • Redis Port: $(get_value REDIS_PORT || echo '6379 (default)')"
   print_color "$GREEN" "  • Log Level: ${log_level:-INFO (default)}"
   print_color "$GREEN" "  • Log Format: ${log_format:-pretty (default)}"
   echo ""

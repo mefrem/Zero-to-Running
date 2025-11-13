@@ -159,8 +159,9 @@ check_port_in_use() {
 
 # Display port conflict information in a formatted table
 display_port_conflicts() {
-    local -n conflict_data=$1
-    local num_conflicts=${#conflict_data[@]}
+    # Bash 3.2 compatible: use eval to access array indirectly
+    local array_name=$1
+    eval "local num_conflicts=\${#${array_name}[@]}"
 
     echo ""
     print_status "${RED}" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -175,7 +176,8 @@ display_port_conflicts() {
     printf "  %-12s %-8s %-8s %-30s\n" "────────────" "────────" "────────" "──────────────────────────────"
 
     # Table rows
-    for conflict in "${conflict_data[@]}"; do
+    eval "local conflicts=(\"\${${array_name}[@]}\")"
+    for conflict in "${conflicts[@]}"; do
         IFS='|' read -r service port pid process <<< "${conflict}"
         printf "  ${YELLOW}%-12s %-8s %-8s %-30s${NC}\n" "${service}" "${port}" "${pid}" "${process}"
     done
@@ -185,13 +187,15 @@ display_port_conflicts() {
 
 # Display solution suggestions for port conflicts
 display_port_solutions() {
-    local -n conflict_data=$1
+    # Bash 3.2 compatible: use eval to access array indirectly
+    local array_name=$1
 
     print_status "${CYAN}" "${BOLD}SUGGESTED SOLUTIONS:${NC}"
     echo ""
 
     local conflict_num=1
-    for conflict in "${conflict_data[@]}"; do
+    eval "local conflicts=(\"\${${array_name}[@]}\")"
+    for conflict in "${conflicts[@]}"; do
         IFS='|' read -r service port pid process <<< "${conflict}"
 
         print_status "${CYAN}" "${BOLD}${conflict_num}. Port ${port} (${service}):${NC}"
@@ -427,6 +431,61 @@ get_profile_services() {
     esac
 }
 
+ensure_network_exists() {
+    local env_file="${PROJECT_ROOT}/.env"
+
+    if [ -f "${env_file}" ]; then
+        # shellcheck source=/dev/null
+        source "${env_file}"
+    fi
+
+    local network_name="${DOCKER_NETWORK:-zero-to-running-network}"
+
+    if docker network inspect "${network_name}" >/dev/null 2>&1; then
+        print_status "${GREEN}" "✓ Docker network '${network_name}' ready"
+        return
+    fi
+
+    print_status "${BLUE}" "Creating Docker network '${network_name}'..."
+    if docker network create "${network_name}" >/dev/null; then
+        print_status "${GREEN}" "✓ Docker network '${network_name}' created"
+    else
+        error_exit "Failed to create Docker network '${network_name}'."
+    fi
+}
+
+# Display quick access URLs during startup
+display_quick_access_urls() {
+    # Load environment variables
+    set -a
+    source "${PROJECT_ROOT}/.env" 2>/dev/null || true
+    set +a
+
+    local FRONTEND_PORT=${FRONTEND_PORT:-3000}
+    local BACKEND_PORT=${BACKEND_PORT:-3001}
+
+    echo ""
+    print_status "${CYAN}" "${BOLD}Quick Access URLs:${NC}"
+    
+    if is_service_in_profile "frontend"; then
+        local frontend_url="http://localhost:${FRONTEND_PORT}/"
+        if [ -t 1 ]; then
+            # Create clickable hyperlink using OSC 8 escape sequence
+            printf "  ${CYAN}Frontend:${NC}  \033]8;;%s\033\\%s\033]8;;\033\\\n" "${frontend_url}" "${frontend_url}"
+        else
+            printf "  ${CYAN}Frontend:${NC}  %s\n" "${frontend_url}"
+        fi
+    fi
+
+    local backend_url="http://localhost:${BACKEND_PORT}"
+    if [ -t 1 ]; then
+        # Create clickable hyperlink using OSC 8 escape sequence
+        printf "  ${CYAN}Backend:${NC}   \033]8;;%s\033\\%s\033]8;;\033\\\n" "${backend_url}" "${backend_url}"
+    else
+        printf "  ${CYAN}Backend:${NC}   %s\n" "${backend_url}"
+    fi
+}
+
 # Start Docker Compose services
 start_services() {
     print_status "${BLUE}" "Starting Docker Compose services for '${PROFILE}' profile..."
@@ -439,6 +498,8 @@ start_services() {
 
     cd "${PROJECT_ROOT}"
 
+    ensure_network_exists
+
     # Set COMPOSE_PROFILES environment variable for docker-compose
     export COMPOSE_PROFILES="${PROFILE}"
 
@@ -449,6 +510,9 @@ start_services() {
 
     echo ""
     print_status "${GREEN}" "✓ Services started in detached mode (profile: ${PROFILE})"
+    
+    # Show quick access URLs immediately after starting
+    display_quick_access_urls
 }
 
 # Check backend health via HTTP endpoint
@@ -857,12 +921,27 @@ display_service_info() {
     echo ""
 
     if is_service_in_profile "frontend"; then
-        echo -e "${CYAN}Frontend:${NC}   http://localhost:${FRONTEND_PORT}"
+        local frontend_url="http://localhost:${FRONTEND_PORT}/"
+        local frontend_display="${frontend_url}"
+
+        if [ -t 1 ]; then
+            printf -v frontend_display '\033]8;;%s\033\\%s\033]8;;\033\\' "${frontend_url}" "${frontend_url}"
+        fi
+
+        printf "%bFrontend:%b   %s\n" "${CYAN}" "${NC}" "${frontend_display}"
     else
-        echo -e "${CYAN}Frontend:${NC}   ${BLUE}Not started (not in ${PROFILE} profile)${NC}"
+        printf "%bFrontend:%b   %bNot started (not in %s profile)%b\n" "${CYAN}" "${NC}" "${BLUE}" "${PROFILE}" "${NC}"
     fi
 
-    echo -e "${CYAN}Backend:${NC}    http://localhost:${BACKEND_PORT}"
+    # Make backend URL clickable
+    local backend_url="http://localhost:${BACKEND_PORT}"
+    local backend_display="${backend_url}"
+    
+    if [ -t 1 ]; then
+        printf -v backend_display '\033]8;;%s\033\\%s\033]8;;\033\\' "${backend_url}" "${backend_url}"
+    fi
+    
+    printf "%bBackend:%b    %s\n" "${CYAN}" "${NC}" "${backend_display}"
     echo ""
     echo -e "${BOLD}Connection Strings:${NC}"
     echo ""

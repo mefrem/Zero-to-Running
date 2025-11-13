@@ -8,6 +8,8 @@
 # Default target when 'make' is run without arguments
 .DEFAULT_GOAL := help
 
+profile ?= full
+
 ##@ General
 
 help: ## Display this help message with all available commands
@@ -36,7 +38,13 @@ down: ## Stop all running services
 	@echo "Stopping Zero-to-Running Services"
 	@echo "====================================="
 	@echo ""
-	@docker-compose down
+	@if [ "$(profile)" = "minimal" ] || [ -z "$(profile)" ]; then \
+		echo "Stopping core services (postgres, backend)"; \
+		docker-compose down; \
+	else \
+		echo "Stopping profile: $(profile) (includes all core services)"; \
+		COMPOSE_PROFILES=$(profile) docker-compose down; \
+	fi
 	@echo ""
 	@echo "✓ All services stopped"
 	@echo "✓ Data volumes preserved (postgres-data, redis-data)"

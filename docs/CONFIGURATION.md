@@ -89,6 +89,10 @@ Application uses configuration
     └── CONFIGURATION.md   # This file - comprehensive guide
 ```
 
+### Local Overrides (`.env.local`)
+
+To keep the shared configuration stable across collaborators, place machine-specific overrides in `.env.local` (or `.env.<profile>.local`). These files are already git-ignored and can safely redefine ports or other variables without touching the baseline `.env`/`.env.<profile>` files. The startup tooling loads these overrides last, so any value you define there takes precedence during local development.
+
 ## Environment Variables
 
 ### Application Settings

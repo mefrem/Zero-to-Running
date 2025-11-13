@@ -5,7 +5,7 @@
 
 import { createClient, RedisClientType } from 'redis';
 import { logger, sanitizeConnectionString } from '../utils/logger';
-import { logRedisOperation } from '../middleware/logging';
+// import { logRedisOperation } from '../middleware/logging';  // Unused for now
 import { createRedisConnectionError, createRedisOperationError } from '../utils/error-messages';
 
 // Redis configuration from environment variables

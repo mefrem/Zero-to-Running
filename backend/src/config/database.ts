@@ -3,7 +3,7 @@
  * Handles PostgreSQL connection pooling using environment variables
  */
 
-import { Pool, PoolConfig, QueryResult } from 'pg';
+import { Pool, PoolConfig, QueryResult, QueryResultRow } from 'pg';
 import { logger, sanitizeConnectionString } from '../utils/logger';
 import { logDatabaseQuery } from '../middleware/logging';
 import { createDatabaseConnectionError, createDatabaseQueryError } from '../utils/error-messages';
@@ -26,7 +26,7 @@ export const pool = new Pool(dbConfig);
 
 // Handle pool errors
 pool.on('error', (err) => {
-  logger.error('Unexpected database pool error', { error: err.message });
+  logger.error({ error: err.message }, 'Unexpected database pool error');
 });
 
 // Log database connection on connect
@@ -47,7 +47,7 @@ pool.on('connect', () => {
  * @param requestId Optional requestId for tracing
  * @returns Query result
  */
-export async function executeQuery<T = any>(
+export async function executeQuery<T extends QueryResultRow = any>(
   query: string,
   params?: any[],
   requestId?: string
@@ -75,7 +75,7 @@ export async function executeQuery<T = any>(
 
     return result;
   } catch (error) {
-    const duration = Date.now() - startTime;
+    // const duration = Date.now() - startTime;
 
     // Create enhanced error with query context
     const enhancedError = createDatabaseQueryError(error, query, requestId);
@@ -135,8 +135,11 @@ export async function closeDatabaseConnection(): Promise<void> {
     await pool.end();
     logger.info('Database connection pool closed');
   } catch (error) {
-    logger.error('Error closing database connection pool', {
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      },
+      'Error closing database connection pool'
+    );
   }
 }

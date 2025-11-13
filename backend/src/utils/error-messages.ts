@@ -10,7 +10,7 @@ import {
   DatabaseError,
   RedisError,
   ConfigurationError,
-  NetworkError,
+  // NetworkError,  // Unused for now
   InitializationError,
   ErrorSeverity,
 } from './errors';

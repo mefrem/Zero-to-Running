@@ -218,6 +218,13 @@ Useful Commands:
   make logs    - View service logs
   make status  - Check service health
 
+Stop behavior:
+
+```bash
+make down                    # Stops full profile (all services)
+make down profile=minimal    # Stops core services only (postgres, backend)
+```
+
 Press Ctrl+C to stop monitoring (services will continue running)
 ```
 
